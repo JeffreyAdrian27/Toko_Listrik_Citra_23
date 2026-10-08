@@ -728,18 +728,64 @@ body {
 /* Responsive adjustments */
 @media (max-width: 900px) {
   .sidebar {
+    width: 270px;
+    max-width: 85vw;
+    z-index: 100;
     transform: translateX(-100%);
+    box-shadow: none;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .sidebar.open {
     transform: translateX(0);
+    box-shadow: 0 10px 35px rgba(15, 23, 42, 0.25);
   }
   .main-wrapper {
     margin-left: 0;
   }
   .content-body {
-    padding: 16px;
+    padding: 16px 12px;
   }
   .top-navbar {
-    padding: 0 16px;
+    height: 60px;
+    padding: 0 14px;
+    gap: 8px;
+    justify-content: space-between;
+  }
+  .page-title-box {
+    min-width: 0;
+    flex: 1;
+  }
+  .page-title-box h2 {
+    font-size: 1.05rem;
+    line-height: 1.25;
+    margin: 0;
+  }
+  .page-title-box p {
+    font-size: 0.75rem;
+    margin: 0;
+    line-height: 1.2;
+  }
+}
+
+@media (max-width: 580px) {
+  .top-navbar {
+    height: 56px;
+    padding: 0 10px;
+    gap: 6px;
+  }
+  .content-body {
+    padding: 12px 8px;
+  }
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .card-header {
+    padding: 14px 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .card-body {
+    padding: 14px 12px;
   }
 }
