@@ -4,11 +4,11 @@
 |---|---|
 | Nama Produk | Sistem Toko Listrik Citra 23 Palu |
 | Jenis | Aplikasi web manajemen stok, transaksi, dan laporan toko |
-| Pengguna | Admin (single role) |
+| Pengguna | Admin dan Pegawai (role-based access) |
 | Frontend | Vue.js 3 (Vite, Vue Router, Pinia) |
 | Database | MySQL |
 | Backend (asumsi) | Node.js + Express (REST API) — wajib ada untuk menjaga keamanan & akses MySQL |
-| Status | Draft v1.0 |
+| Status | Draft v1.1 |
 
 ---
 
@@ -26,9 +26,11 @@ Toko Listrik Citra 23 Palu membutuhkan sistem untuk mencatat stok barang, penjua
 7. Admin dapat melihat laporan laba/rugi.
 8. Admin dapat mengekspor laporan ke PDF / Excel.
 9. Sistem aman dari dorking dan akses tanpa login.
+10. Terdapat dua role: **Admin** (akses penuh) dan **Pegawai** (hanya menu Penjualan).
+11. Data penjualan **tidak dapat diubah atau dihapus oleh Pegawai**. Koreksi hanya bisa dilakukan Admin dan selalu tercatat di audit log.
 
 ### Di Luar Cakupan (Out of Scope)
-- Multi-role / multi-user selain admin
+- Role selain Admin dan Pegawai (mis. owner, manajer, kasir terpisah)
 - Kasir/POS dengan printer struk
 - Multi-cabang, retur, piutang/hutang, manajemen supplier
 - Aplikasi mobile native
@@ -37,11 +39,31 @@ Toko Listrik Citra 23 Palu membutuhkan sistem untuk mencatat stok barang, penjua
 
 ## 2. Pengguna
 
-| Role | Hak Akses |
+| Role | Deskripsi |
 |---|---|
-| Admin | Seluruh fitur sistem |
+| Admin | Pemilik/pengelola toko. Akses ke seluruh fitur, termasuk mengelola akun Pegawai. |
+| Pegawai | Staf penjaga toko. Hanya dapat membuka menu **Penjualan** untuk **menambah** data penjualan. Tidak dapat mengubah atau menghapus data. |
 
-Akun awal (seed): username `admin`. Password awal sesuai kesepakatan pengembangan, **wajib disimpan sebagai hash (bcrypt)** dan disarankan diganti sebelum produksi (lihat bagian Keamanan).
+### Matriks Hak Akses
+
+| Fitur | Admin | Pegawai |
+|---|:---:|:---:|
+| Login / Logout | ✅ | ✅ |
+| Dashboard | ✅ | ❌ |
+| Kelola kategori | ✅ | ❌ |
+| Kelola barang & tambah stok | ✅ | ❌ |
+| Lihat harga modal (MOD) & laba | ✅ | ❌ |
+| Input pembelian | ✅ | ❌ |
+| **Input penjualan baru** | ✅ | ✅ |
+| Lihat penjualan **hari ini** (read-only) | ✅ | ✅ |
+| Riwayat penjualan semua periode & grafik | ✅ | ❌ |
+| **Ubah / hapus data penjualan** | ❌ (hanya pembatalan/void) | ❌ |
+| Batalkan (void) penjualan dengan alasan | ✅ | ❌ |
+| Laporan laba/rugi & ekspor PDF/Excel | ✅ | ❌ |
+| Kelola akun Pegawai | ✅ | ❌ |
+| Lihat audit log | ✅ | ❌ |
+
+Akun awal (seed): username `admin`. Password awal sesuai kesepakatan pengembangan, **wajib disimpan sebagai hash (bcrypt)** dan disarankan diganti sebelum produksi (lihat bagian Keamanan). Akun Pegawai dibuat oleh Admin.
 
 ---
 
@@ -50,15 +72,19 @@ Akun awal (seed): username `admin`. Password awal sesuai kesepakatan pengembanga
 | Menu | Route | Akses |
 |---|---|---|
 | Login | `/login` | Publik |
-| Dashboard | `/` | Login |
-| Kategori | `/kategori` | Login |
-| Barang | `/barang` | Login |
-| Penjualan | `/penjualan` | Login |
-| Pembelian | `/pembelian` | Login |
-| Laporan Laba/Rugi | `/laporan` | Login |
-| Logout | — | Login |
+| Dashboard | `/` | Admin |
+| Kategori | `/kategori` | Admin |
+| Barang | `/barang` | Admin |
+| Penjualan | `/penjualan` | Admin, Pegawai |
+| Pembelian | `/pembelian` | Admin |
+| Laporan Laba/Rugi | `/laporan` | Admin |
+| Akun Pegawai | `/akun-pegawai` | Admin |
+| Audit Log | `/audit-log` | Admin |
+| Logout | — | Admin, Pegawai |
 
-Route yang tidak dikenal diarahkan ke `/login` (jika belum login) atau halaman 404 generik (jika sudah login).
+- Pegawai hanya melihat menu **Penjualan** dan **Logout**; setelah login otomatis diarahkan ke `/penjualan`.
+- Pegawai yang membuka route Admin secara langsung (mengetik URL) diarahkan kembali ke `/penjualan`.
+- Route yang tidak dikenal diarahkan ke `/login` (jika belum login) atau halaman 404 generik (jika sudah login).
 
 ---
 
@@ -70,8 +96,11 @@ Route yang tidak dikenal diarahkan ke `/login` (jika belum login) atau halaman 4
 - **FR-AUTH-3**: Logout menghapus sesi dan mengarahkan ke `/login`.
 - **FR-AUTH-4**: Pesan gagal login generik ("Username atau password salah"), tidak membocorkan mana yang salah.
 - **FR-AUTH-5**: Pembatasan percobaan login (rate limit), mis. 5 kali gagal → tunggu 5 menit.
+- **FR-AUTH-6**: Sesi membawa informasi **role** (`admin` / `pegawai`) yang ditetapkan server dan ditandatangani di dalam token; role tidak pernah diambil dari input klien.
+- **FR-AUTH-7**: Setelah login, Admin diarahkan ke Dashboard dan Pegawai ke `/penjualan`.
+- **FR-AUTH-8**: Akun Pegawai yang dinonaktifkan tidak dapat login dan sesi aktifnya ditolak pada request berikutnya.
 
-### 4.2 Kelola Kategori (CRUD)
+### 4.2 Kelola Kategori (CRUD) — khusus Admin
 
 | Field | Tipe | Keterangan |
 |---|---|---|
@@ -81,7 +110,7 @@ Route yang tidak dikenal diarahkan ke `/login` (jika belum login) atau halaman 4
 - **FR-KAT-1**: Tambah, ubah, hapus, dan lihat daftar kategori (dengan pencarian).
 - **FR-KAT-2**: Kategori yang masih dipakai oleh barang **tidak boleh dihapus** (tampilkan pesan penjelasan).
 
-### 4.3 Kelola Barang (CRUD)
+### 4.3 Kelola Barang (CRUD) — khusus Admin
 
 | Field | Tipe | Keterangan |
 |---|---|---|
@@ -122,7 +151,7 @@ Route yang tidak dikenal diarahkan ke `/login` (jika belum login) atau halaman 4
 - **FR-BRG-4**: Barang yang sudah memiliki riwayat transaksi tidak dihapus permanen (soft delete / diblokir) agar laporan tetap konsisten.
 - **FR-BRG-5**: Indikator visual untuk stok menipis/habis (stok_akhir ≤ batas, mis. 5).
 
-### 4.4 Input Penjualan
+### 4.4 Input Penjualan — Admin & Pegawai
 
 | Field | Sumber | Keterangan |
 |---|---|---|
@@ -135,13 +164,25 @@ Route yang tidak dikenal diarahkan ke `/login` (jika belum login) atau halaman 4
 
 - **FR-JUAL-1**: Saat disimpan: catat transaksi, tambah `total_keluar`, kurangi `stok_akhir` (dalam satu transaksi database).
 - **FR-JUAL-2**: Simpan **snapshot** `harga_jual` dan `harga_modal` (dari MOD) pada baris penjualan, agar laporan laba tidak berubah ketika harga di kemudian hari berubah.
-- **FR-JUAL-3**: **History penjualan per bulan**: filter bulan & tahun, tabel (tanggal, kode, nama, jumlah, harga, omzet) dan total omzet bulan tersebut.
-- **FR-JUAL-4**: **Grafik per bulan**:
+- **FR-JUAL-3**: **History penjualan per bulan (khusus Admin)**: filter bulan & tahun, tabel (tanggal, kode, nama, jumlah, harga, omzet) dan total omzet bulan tersebut.
+- **FR-JUAL-4**: **Grafik per bulan (khusus Admin)**:
   - Grafik batang/garis omzet harian pada bulan terpilih.
   - Grafik ringkasan omzet 12 bulan pada tahun terpilih.
   - Library: Chart.js (vue-chartjs).
 
-### 4.5 Input Pembelian
+#### 4.4.1 Perlindungan Data Penjualan (Pegawai Tidak Dapat Mengubah Data)
+
+**Latar belakang:** mencegah manipulasi data. Contoh kasus: terjual 2 lampu dan diinput 2, lalu saat Admin tidak ada, Pegawai mengubah jumlah menjadi 1 dan mengambil 1 lampu sisanya. Sistem harus membuat hal ini tidak mungkin dilakukan secara diam-diam.
+
+- **FR-JUAL-5**: Pegawai hanya dapat **menambah** penjualan baru. Tidak ada tombol edit/hapus pada tampilan Pegawai, dan endpoint `PUT/PATCH/DELETE` penjualan oleh Pegawai dijawab `403 Forbidden` (dan dicatat di audit log).
+- **FR-JUAL-6**: Pegawai hanya melihat daftar penjualan **hari ini** secara **read-only**, tanpa harga modal dan laba. Riwayat lengkap dan grafik hanya untuk Admin. Filter tanggal tidak dapat diakali lewat parameter URL/API.
+- **FR-JUAL-7**: Untuk Pegawai, `tanggal` transaksi diisi **otomatis dari waktu server** dan tidak dapat diubah (mencegah tanggal mundur). Setiap baris menyimpan `created_by` (user) dan `created_at` (waktu server).
+- **FR-JUAL-8**: Pegawai tidak dapat melihat harga modal (`MOD`); API penjualan untuk Pegawai tidak mengembalikan field tersebut.
+- **FR-JUAL-9**: **Koreksi hanya oleh Admin lewat pembatalan (void)**: baris tidak dihapus, status menjadi `batal`, **alasan wajib diisi**, stok dikembalikan otomatis, dan tercatat di audit log (siapa, kapan, alasan). Admin tidak mengubah jumlah secara langsung; jika jumlah salah, lakukan void lalu input ulang.
+- **FR-JUAL-10**: Baris yang di-void tetap tampil (dicoret/berlabel "Batal") dan dikecualikan dari omzet, HPP, dan laporan laba/rugi.
+- **FR-JUAL-11**: Penguatan di level database (disarankan): trigger `BEFORE UPDATE/DELETE` pada tabel `penjualan` yang menolak perubahan kolom `barang_id`, `jumlah`, `harga_jual`, `harga_modal`, `omzet_penjualan`, `tanggal` serta penghapusan baris; hanya kolom status void yang dapat diubah melalui proses void Admin.
+
+### 4.5 Input Pembelian — khusus Admin
 
 | Field | Sumber | Keterangan |
 |---|---|---|
@@ -156,7 +197,7 @@ Route yang tidak dikenal diarahkan ke `/login` (jika belum login) atau halaman 4
 - **FR-BELI-1**: Saat disimpan: catat transaksi, tambah `total_masuk`, tambah `stok_akhir`, dan **perbarui `MOD`** barang dengan `harga_baru_modal_satuan`.
 - **FR-BELI-2**: Daftar riwayat pembelian dengan filter bulan & tahun.
 
-### 4.6 Laporan Laba/Rugi
+### 4.6 Laporan Laba/Rugi — khusus Admin
 
 - **FR-LAP-1**: Filter periode (bulanan, tahunan, atau rentang tanggal).
 - **FR-LAP-2**: Perhitungan:
@@ -166,11 +207,32 @@ Route yang tidak dikenal diarahkan ke `/login` (jika belum login) atau halaman 4
   - **Total Pembelian (informasi)** = Σ total_pembayaran pembelian pada periode
 - **FR-LAP-3**: Tampilkan rincian per barang (jumlah terjual, omzet, HPP, laba) dan ringkasan total. Nilai negatif ditandai **Rugi** (warna merah), positif **Laba** (hijau).
 
-### 4.7 Ekspor Laporan
+### 4.7 Ekspor Laporan — khusus Admin
 - **FR-EXP-1**: Ekspor laporan laba/rugi ke **PDF** (judul toko, periode, tabel rincian, ringkasan).
 - **FR-EXP-2**: Ekspor ke **Excel (.xlsx)** dengan kolom terstruktur.
 - **FR-EXP-3**: Ekspor mengikuti filter periode yang sedang aktif. (Opsional: ekspor history penjualan & pembelian.)
 - Library usulan: jsPDF + jspdf-autotable (PDF), SheetJS atau ExcelJS (Excel).
+
+### 4.8 Kelola Akun Pegawai — khusus Admin
+
+| Field | Tipe | Keterangan |
+|---|---|---|
+| nama | VARCHAR(100) | Nama pegawai |
+| username | VARCHAR(50), unik | |
+| password | Input saat buat/reset | Disimpan sebagai hash bcrypt |
+| is_active | BOOLEAN | Nonaktif = tidak bisa login |
+
+- **FR-PGW-1**: Admin dapat menambah, mengubah, mereset password, dan menonaktifkan akun Pegawai.
+- **FR-PGW-2**: Pegawai tidak dapat mengubah akun/role (miliknya maupun orang lain).
+- **FR-PGW-3**: Akun yang sudah punya riwayat transaksi tidak dihapus permanen, cukup dinonaktifkan agar jejak `created_by` tetap utuh.
+- **FR-PGW-4**: Penambahan akun Admin baru hanya melalui seed/database, tidak melalui menu ini.
+
+### 4.9 Audit Log — khusus Admin
+
+- **FR-LOG-1**: Sistem mencatat otomatis: login berhasil/gagal, logout, input penjualan, void penjualan (beserta alasan), pembelian/tambah stok, perubahan barang/kategori/akun, dan **upaya akses ditolak (403)**.
+- **FR-LOG-2**: Kolom: waktu, user, role, aksi, entitas, id entitas, detail, alamat IP.
+- **FR-LOG-3**: Log bersifat **append-only**: tidak dapat diubah atau dihapus melalui aplikasi.
+- **FR-LOG-4**: Admin dapat memfilter log berdasarkan tanggal, user, dan jenis aksi.
 
 ---
 
@@ -202,28 +264,43 @@ Route yang tidak dikenal diarahkan ke `/login` (jika belum login) atau halaman 4
 - Akun database aplikasi memakai hak akses minimum (bukan root).
 - Backup database berkala.
 
+### 5.4 Kontrol Akses Berbasis Role (RBAC)
+- Otorisasi **ditegakkan di backend**: middleware `requireRole` pada setiap endpoint. Menyembunyikan menu di frontend hanya untuk kenyamanan, bukan pengaman.
+- Pegawai hanya diizinkan: `POST /penjualan` (tambah), `GET /penjualan/hari-ini`, daftar barang minimal untuk pilihan (kode, nama, harga jual, stok; **tanpa MOD**), dan login/logout. Selain itu → `403`.
+- Role dan `created_by` selalu ditentukan server dari token, tidak dari body request.
+- Cegah IDOR/manipulasi parameter: Pegawai tidak bisa meminta data di luar "hari ini" dengan mengganti query string.
+- Percobaan akses ditolak dicatat di audit log.
+
 ---
 
 ## 6. Rancangan Database (Ringkas)
 
 ```
-users        (id, username UNIQUE, password_hash, created_at)
+users        (id, nama, username UNIQUE, password_hash, role ENUM('admin','pegawai'),
+              is_active, created_at)
 kategori     (id, nama_kategori UNIQUE)
 barang       (id, MOD, kode_barang UNIQUE, nama_barang, kategori_id FK, merk,
               stok_awal, total_masuk, total_keluar, stok_akhir,
               harga_jual, keterangan, deleted_at)
 penjualan    (id, barang_id FK, kode_barang, nama_barang, harga_jual,
-              harga_modal, jumlah, omzet_penjualan, tanggal, created_at)
+              harga_modal, jumlah, omzet_penjualan, tanggal,
+              created_by FK → users, created_at,
+              status ENUM('aktif','batal') DEFAULT 'aktif',
+              voided_by FK → users, voided_at, void_reason)
 pembelian    (id, barang_id FK, kode_barang, nama_barang, harga_lama,
               harga_baru_modal_satuan, jumlah_masuk, total_pembayaran,
-              tanggal, created_at)
+              tanggal, created_by FK → users, created_at)
+audit_log    (id, waktu, user_id FK, role, aksi, entitas, entitas_id,
+              detail, ip_address)
 ```
 
-Relasi: `kategori 1 — N barang`, `barang 1 — N penjualan`, `barang 1 — N pembelian`.
+Relasi: `kategori 1 — N barang`, `barang 1 — N penjualan`, `barang 1 — N pembelian`, `users 1 — N penjualan/pembelian/audit_log`.
 
 Aturan data:
 - Operasi penjualan/pembelian memakai **database transaction** agar stok dan catatan selalu konsisten.
 - Indeks pada `tanggal`, `barang_id`, dan `kode_barang` untuk performa laporan.
+- Data penjualan bersifat **immutable**: tidak ada UPDATE/DELETE biasa, koreksi hanya lewat void (status `batal`).
+- Laporan dan perhitungan omzet hanya memakai baris dengan `status = 'aktif'`.
 
 ---
 
@@ -235,6 +312,8 @@ Aturan data:
 4. **Penjualan** → stok_akhir turun, omzet tercatat, grafik diperbarui.
 5. **Laporan** → pilih periode → lihat laba/rugi → ekspor PDF/Excel.
 6. **Logout**.
+
+**Alur Pegawai:** login → otomatis ke `/penjualan` → input penjualan → lihat daftar penjualan hari ini (read-only) → logout. Jika ada kesalahan input, Pegawai menghubungi Admin; Admin membatalkan (void) dengan alasan lalu input ulang. Seluruh langkah tercatat di audit log.
 
 ---
 
@@ -264,6 +343,13 @@ Aturan data:
 - [ ] Laporan laba/rugi menghitung omzet, HPP, dan laba/rugi dengan benar.
 - [ ] Ekspor PDF dan Excel menghasilkan file sesuai periode filter.
 - [ ] Halaman memiliki `noindex`, `robots.txt` memblokir crawler, dan tidak ada directory listing.
+- [ ] Akun Pegawai hanya melihat menu Penjualan dan Logout; membuka URL menu Admin diarahkan ke `/penjualan`.
+- [ ] Endpoint Admin yang dipanggil dengan token Pegawai mengembalikan 403 dan tercatat di audit log.
+- [ ] Pegawai dapat menambah penjualan, tetapi tidak ada cara (UI maupun API) untuk mengubah atau menghapus penjualan yang sudah tersimpan.
+- [ ] Pegawai tidak dapat mengubah tanggal transaksi dan tidak melihat harga modal/laba.
+- [ ] Admin dapat void penjualan dengan alasan wajib; stok kembali otomatis dan baris batal tidak masuk laporan.
+- [ ] Admin dapat menambah, mereset password, dan menonaktifkan akun Pegawai; akun nonaktif tidak bisa login.
+- [ ] Audit log mencatat input penjualan, void, dan upaya akses ditolak, serta tidak dapat diubah lewat aplikasi.
 
 ---
 
@@ -271,9 +357,9 @@ Aturan data:
 
 | Fase | Cakupan |
 |---|---|
-| 1 | Setup proyek, database, autentikasi, route guard, keamanan dasar |
+| 1 | Setup proyek, database, autentikasi, role Admin/Pegawai (RBAC), route guard, keamanan dasar |
 | 2 | Kelola kategori & barang (termasuk generator kode & modal tambah stok) |
-| 3 | Input penjualan, history, grafik |
+| 3 | Input penjualan (termasuk proteksi data & void), history, grafik, akun pegawai, audit log |
 | 4 | Input pembelian |
 | 5 | Laporan laba/rugi & ekspor PDF/Excel |
 | 6 | Pengujian, hardening keamanan, deployment |
@@ -286,6 +372,9 @@ Aturan data:
 2. **Tipe `MOD` VARCHAR(5)**: hanya muat 5 karakter (maks. Rp 99.999). Jika ada barang dengan modal ≥ Rp 100.000, nilai akan terpotong/ditolak. Disarankan diubah ke `DECIMAL(12,2)`. Mohon konfirmasi.
 3. **Penomoran kode barang**: diasumsikan per prefix merk (`C23PHI00001`, `C23PHI00002`, …), bukan urut global seluruh barang. Mohon konfirmasi.
 4. **Perhitungan HPP**: memakai modal terakhir (MOD) saat penjualan terjadi, bukan FIFO/rata-rata.
-5. **Edit/hapus transaksi** penjualan & pembelian: belum ditentukan. Disarankan pembatalan (void) dengan koreksi stok otomatis.
+5. **Koreksi transaksi penjualan**: tidak ada edit/hapus; koreksi lewat pembatalan (void) oleh Admin dengan alasan wajib dan koreksi stok otomatis. Koreksi transaksi pembelian belum ditentukan (disarankan pola yang sama).
 6. **Kredensial default** `admin/admin` hanya untuk pengembangan; sangat disarankan diganti sebelum sistem dapat diakses publik.
 7. **Satu barang per input** pada form penjualan/pembelian (tidak ada keranjang multi-item), sesuai spesifikasi.
+8. **Pegawai melihat daftar penjualan hari ini** (read-only) agar bisa memastikan inputnya tersimpan. Jika tidak diinginkan, cukup tampilkan notifikasi sukses saja.
+9. **Admin tidak mengedit jumlah penjualan secara langsung**, hanya void lalu input ulang, agar jejak perubahan selalu ada. Mohon konfirmasi.
+10. **Jumlah akun Pegawai**: tidak dibatasi. Pegawai tidak dapat mengganti password sendiri; reset dilakukan Admin.
