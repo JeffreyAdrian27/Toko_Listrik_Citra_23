@@ -106,7 +106,7 @@
 
       <div class="stat-card">
         <div class="stat-content">
-          <div class="stat-label">Transaksi Pengadaan</div>
+          <div class="stat-label">Transaksi Pembelian</div>
           <div class="stat-value amount">
             {{ reportData.ringkasan?.total_transaksi_beli || 0 }} kali
           </div>
@@ -206,12 +206,8 @@ const reportData = ref({
   rincian_barang: []
 });
 
-const activePeriodLabel = computed(() => {
-  if (filterMode.value === 'bulan') {
-    return `${monthNames[filterMonth.value - 1]} ${filterYear.value}`;
-  }
-  return `${filterStartDate.value} s/d ${filterEndDate.value}`;
-});
+// Periode yang ditampilkan hanya diperbarui saat tombol "Tampilkan Laporan" diklik
+const activePeriodLabel = ref('');
 
 const fetchLaporan = async () => {
   try {
@@ -219,9 +215,11 @@ const fetchLaporan = async () => {
     if (filterMode.value === 'bulan') {
       params.bulan = filterMonth.value;
       params.tahun = filterYear.value;
+      activePeriodLabel.value = `${monthNames[filterMonth.value - 1]} ${filterYear.value}`;
     } else {
       params.dari_tanggal = filterStartDate.value;
       params.sampai_tanggal = filterEndDate.value;
+      activePeriodLabel.value = `${filterStartDate.value} s/d ${filterEndDate.value}`;
     }
 
     const res = await api.get('/laporan/laba-rugi', { params });

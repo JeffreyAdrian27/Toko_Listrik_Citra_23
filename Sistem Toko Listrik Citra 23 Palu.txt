@@ -1,0 +1,35 @@
+Sistem Toko Listrik Citra 23 Palu 
+
+Dibangun dengan : 
+- Vue.js
+- MySQL
+
+Fitur 
+User Admin (login dengan usn: admin pw: admin)
+-login
+-Kelola kategori (crud)  nama_kategori
+-Kelola barang (crud) (MOD varchar(5), kode_barang, nama_barang, kategori(relasi), merk, stok_awal, total_masuk, total_keluar, stok_akhir, harga_jual, keterangan) note (kode_barang = C23 + 3 huruf pertama merk di uppercase + no urut tapi 5 digit jika no urut lebih dari 5 digit lanjutkan jika noname maka C23 + NN + no urut tapi 5 digit jika no urut lebih dari 5 digit lanjutkan)
+-Input penjualan (nama_barang, kode_barang(database), harga_jual(database), jumlah, omzet_penjualan(harga*jumlah), tanggal)
+-Input pembelian (nama_barang, kode_barang(database), harga_lama(database), harga_baru_modal_satuan, jumlah_masuk, total_pembayaran, tanggal) note(harga_lama ini diambil dari MOD tabel barang jika belum ada beri -)
+-Melihat laporan laba/rugi
+-Ekspor laporan ke PDF / Excel
+
+Tujuan
+- admin bisa login logout
+- Admin bisa Kelola kategori
+- admin bisa Kelola barang
+- admin bisa nambah stok dari table barang (muncul modal)
+- admin bisa melakukan input penjualan dan bisa melihat history penjualan per bulan serta munculkan grafik per bulannya 
+- admin bisa melakukan input pembelian 
+- admin bisa melihat laporan laba/rugi
+- admin bisa ekspor laporan ke PDF / Excel
+
+Security
+- anti dorking
+- anti tembak domain kalau belum login, dst
+
+-------------------------------------------
+Admin
+admin - admin123
+kasir1 - kasir123
+budi - budi123
