@@ -13,11 +13,38 @@
           </div>
         </div>
         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-          <button @click="exportToPDF" class="btn btn-sm btn-secondary" style="font-weight: 700; color: #DC2626; border-color: #FECACA;">
+          <button
+            @click="exportToPDF"
+            class="btn btn-sm btn-secondary"
+            :disabled="!hasData"
+            :style="{
+              fontWeight: 700,
+              color: hasData ? '#DC2626' : '#94A3B8',
+              borderColor: hasData ? '#FECACA' : '#E2E8F0',
+              backgroundColor: hasData ? '#FFFFFF' : '#F8FAFC',
+              cursor: hasData ? 'pointer' : 'not-allowed',
+              opacity: hasData ? 1 : 0.55
+            }"
+            :title="hasData ? 'Ekspor Laporan ke PDF' : 'Tidak ada data untuk diekspor'"
+          >
             <FileText :size="16" />
             <span>Ekspor PDF</span>
           </button>
-          <button @click="exportToExcel" class="btn btn-sm btn-secondary" style="font-weight: 700; color: #059669; border-color: #A7F3D0;">
+
+          <button
+            @click="exportToExcel"
+            class="btn btn-sm btn-secondary"
+            :disabled="!hasData"
+            :style="{
+              fontWeight: 700,
+              color: hasData ? '#059669' : '#94A3B8',
+              borderColor: hasData ? '#A7F3D0' : '#E2E8F0',
+              backgroundColor: hasData ? '#FFFFFF' : '#F8FAFC',
+              cursor: hasData ? 'pointer' : 'not-allowed',
+              opacity: hasData ? 1 : 0.55
+            }"
+            :title="hasData ? 'Ekspor Laporan ke Excel' : 'Tidak ada data untuk diekspor'"
+          >
             <FileSpreadsheet :size="16" />
             <span>Ekspor Excel (.xlsx)</span>
           </button>
@@ -270,7 +297,7 @@ import {
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 const monthNames = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -333,6 +360,10 @@ const totalPages = computed(() => {
   return Math.ceil(count / pageSize) || 1;
 });
 
+const hasData = computed(() => {
+  return Array.isArray(reportData.value.rincian_barang) && reportData.value.rincian_barang.length > 0;
+});
+
 const fetchLaporan = async (resetPage = false) => {
   if (resetPage) currentPage.value = 1;
   try {
@@ -360,6 +391,11 @@ const fetchLaporan = async (resetPage = false) => {
 
 // Export to PDF
 const exportToPDF = () => {
+  if (!hasData.value) {
+    alert('Tidak ada data transaksi pada periode ini untuk diekspor.');
+    return;
+  }
+
   const doc = new jsPDF('p', 'mm', 'a4');
 
   const title = 'Laporan Laba Rugi & Keuangan';
@@ -432,29 +468,302 @@ const exportToPDF = () => {
     doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')} | Halaman ${i} dari ${pageCount}`, 14, 290);
   }
 
-  doc.save(`Laporan_Laba_Rugi_Citra23_${activePeriodLabel.value.replace(/\s+/g, '_')}.pdf`);
+  const cleanPeriod = activePeriodLabel.value.replace(/[^a-zA-Z0-9_-]/g, '_');
+  doc.save(`Laporan_Laba_Rugi_Citra23_${cleanPeriod}.pdf`);
 };
 
-// Export to Excel
-const exportToExcel = () => {
-  const dataRows = (reportData.value.rincian_barang || []).map((it, idx) => ({
-    'No': idx + 1,
-    'Tanggal': formatDate(it.tanggal),
-    'Kode Barang': it.kode_barang,
-    'Nama Barang': it.nama_barang,
-    'Kode MOD': it.MOD_kode || '-',
-    'Modal Satuan (Rp)': Number(it.harga_beli_modal),
-    'Qty Terjual': Number(it.total_terjual),
-    'Total Omzet (Rp)': Number(it.total_omzet),
-    'Total Modal HPP (Rp)': Number(it.total_modal_hpp),
-    'Laba Kotor (Rp)': Number(it.total_laba_kotor)
-  }));
+// Export to Excel dengan Warna Elegan, Kop Surat, Ringkasan, Border Rapi & Teks Bebas Terpotong
+const exportToExcel = async () => {
+  if (!hasData.value) {
+    alert('Tidak ada data transaksi pada periode ini untuk diekspor.');
+    return;
+  }
 
-  const worksheet = XLSX.utils.json_to_sheet(dataRows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Rincian Laba Rugi');
+  const ringkasan = reportData.value.ringkasan || {};
+  const items = reportData.value.rincian_barang || [];
 
-  XLSX.writeFile(workbook, `Laporan_Laba_Rugi_Citra23_${activePeriodLabel.value.replace(/\s+/g, '_')}.xlsx`);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Toko Listrik Citra 23 Palu';
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet('Laba Rugi Citra 23', {
+    views: [{ showGridLines: true }]
+  });
+
+  // Atur lebar kolom (lebar ekstra agar teks produk dan nominal rupiah tidak pernah terpotong)
+  sheet.columns = [
+    { key: 'no', width: 7 },
+    { key: 'tanggal', width: 16 },
+    { key: 'kode_barang', width: 20 },
+    { key: 'nama_barang', width: 55 },
+    { key: 'kode_mod', width: 16 },
+    { key: 'modal_satuan', width: 22 },
+    { key: 'qty', width: 16 },
+    { key: 'omzet', width: 24 },
+    { key: 'modal_hpp', width: 24 },
+    { key: 'laba_kotor', width: 24 }
+  ];
+
+  // Helper untuk border tipis rapi pada sel
+  const thinBorder = {
+    top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+  };
+
+  // 1. Baris Judul Utama (Kop Laporan Berwarna Biru Citra 23)
+  sheet.mergeCells('A1:J1');
+  const titleCell = sheet.getCell('A1');
+  titleCell.value = 'TOKO LISTRIK CITRA 23 PALU';
+  titleCell.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF005CE6' } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+  sheet.getRow(1).height = 36;
+
+  sheet.mergeCells('A2:J2');
+  const subCell = sheet.getCell('A2');
+  subCell.value = 'LAPORAN LABA RUGI & KEUANGAN';
+  subCell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FF005CE6' } };
+  subCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEBF3FF' } };
+  subCell.alignment = { vertical: 'middle', horizontal: 'center' };
+  sheet.getRow(2).height = 24;
+
+  sheet.mergeCells('A3:J3');
+  const periodCell = sheet.getCell('A3');
+  periodCell.value = `Periode: ${activePeriodLabel.value} | Dicetak pada: ${new Date().toLocaleString('id-ID')}`;
+  periodCell.font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF475569' } };
+  periodCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+  periodCell.alignment = { vertical: 'middle', horizontal: 'center' };
+  sheet.getRow(3).height = 20;
+
+  sheet.addRow([]); // Baris 4 kosong
+
+  // 2. Bagian Ringkasan Eksekutif Keuangan
+  sheet.mergeCells('A5:D5');
+  const sumHeader = sheet.getCell('A5');
+  sumHeader.value = 'RINGKASAN EKSEKUTIF KEUANGAN';
+  sumHeader.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+  sumHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+  sumHeader.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  sheet.getRow(5).height = 24;
+
+  const summaryData = [
+    ['Total Penjualan (Omzet)', Number(ringkasan.total_omzet || 0), 'currency'],
+    ['Total Modal HPP (Berdasarkan MOD)', Number(ringkasan.total_modal_hpp || 0), 'currency'],
+    ['Estimasi Laba Kotor', Number(ringkasan.total_laba_kotor || 0), 'currency_profit'],
+    ['Margin Laba Kotor', `${ringkasan.margin_laba_persen || 0}%`, 'text'],
+    ['Total Barang Terjual', `${ringkasan.total_qty_terjual || 0} unit`, 'text'],
+    ['Total Pasokan Masuk', `${ringkasan.total_pembelian_unit || 0} unit`, 'text']
+  ];
+
+  summaryData.forEach((row, i) => {
+    const rowNum = 6 + i;
+    sheet.mergeCells(`A${rowNum}:C${rowNum}`);
+    const lbl = sheet.getCell(`A${rowNum}`);
+    lbl.value = row[0];
+    lbl.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF334155' } };
+    lbl.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF' } };
+    lbl.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    lbl.border = thinBorder;
+
+    const val = sheet.getCell(`D${rowNum}`);
+    val.value = row[1];
+    val.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF' } };
+    val.border = thinBorder;
+
+    if (row[2] === 'currency') {
+      val.numFmt = '"Rp "#,##0';
+      val.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF005CE6' } };
+      val.alignment = { vertical: 'middle', horizontal: 'right' };
+    } else if (row[2] === 'currency_profit') {
+      val.numFmt = '"Rp "#,##0';
+      const isPositive = Number(ringkasan.total_laba_kotor || 0) >= 0;
+      val.font = { name: 'Arial', size: 10, bold: true, color: { argb: isPositive ? 'FF059669' : 'FFDC2626' } };
+      val.alignment = { vertical: 'middle', horizontal: 'right' };
+    } else {
+      val.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+      val.alignment = { vertical: 'middle', horizontal: 'center' };
+    }
+    sheet.getRow(rowNum).height = 20;
+  });
+
+  sheet.addRow([]); // Baris 12 kosong
+
+  // 3. Header Tabel Rincian Transaksi
+  sheet.mergeCells('A13:J13');
+  const tblTitle = sheet.getCell('A13');
+  tblTitle.value = 'RINCIAN PENJUALAN, NILAI MOD & KEUNTUNGAN PER BARANG';
+  tblTitle.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+  tblTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+  tblTitle.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  sheet.getRow(13).height = 24;
+
+  const headerRow = sheet.getRow(14);
+  headerRow.values = [
+    'No',
+    'Tanggal',
+    'Kode Barang',
+    'Nama Produk',
+    'Kode MOD',
+    'Modal Satuan (Rp)',
+    'Qty Terjual',
+    'Total Omzet (Rp)',
+    'Total Modal HPP (Rp)',
+    'Laba Kotor (Rp)'
+  ];
+  headerRow.height = 28;
+
+  headerRow.eachCell((cell, colNum) => {
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF005CE6' } };
+    cell.alignment = {
+      vertical: 'middle',
+      horizontal: colNum === 4 ? 'left' : (colNum >= 6 ? 'right' : 'center'),
+      wrapText: true
+    };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF0047B3' } },
+      left: { style: 'thin', color: { argb: 'FF93C5FD' } },
+      bottom: { style: 'medium', color: { argb: 'FF0047B3' } },
+      right: { style: 'thin', color: { argb: 'FF93C5FD' } }
+    };
+  });
+
+  let totalQty = 0;
+  let totalOmzet = 0;
+  let totalModal = 0;
+  let totalLaba = 0;
+
+  // 4. Baris-baris Data Transaksi
+  items.forEach((it, idx) => {
+    const qty = Number(it.total_terjual || 0);
+    const omzet = Number(it.total_omzet || 0);
+    const modal = Number(it.total_modal_hpp || 0);
+    const laba = Number(it.total_laba_kotor || 0);
+
+    totalQty += qty;
+    totalOmzet += omzet;
+    totalModal += modal;
+    totalLaba += laba;
+
+    const row = sheet.addRow([
+      idx + 1,
+      formatDate(it.tanggal),
+      it.kode_barang || '',
+      it.nama_barang || '',
+      it.MOD_kode || '-',
+      Number(it.harga_beli_modal || 0),
+      qty,
+      omzet,
+      modal,
+      laba
+    ]);
+    row.height = 24;
+
+    const isEven = idx % 2 === 0;
+    const rowBg = isEven ? 'FFFFFFFF' : 'FFF8FAFC';
+
+    row.eachCell((cell, colNum) => {
+      cell.border = thinBorder;
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+      cell.font = { name: 'Arial', size: 9.5, color: { argb: 'FF1E293B' } };
+
+      // Format khusus per kolom
+      if (colNum === 1) { // No
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      } else if (colNum === 2) { // Tanggal
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.font = { name: 'Arial', size: 9.5, color: { argb: 'FF475569' } };
+      } else if (colNum === 3) { // Kode Barang
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF005CE6' } };
+      } else if (colNum === 4) { // Nama Produk
+        cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+        cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+      } else if (colNum === 5) { // Kode MOD
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEBF3FF' } };
+        cell.font = { name: 'Courier New', size: 10, bold: true, color: { argb: 'FF005CE6' } };
+      } else if (colNum === 6) { // Modal Satuan
+        cell.numFmt = '"Rp "#,##0';
+        cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        cell.font = { name: 'Arial', size: 9.5, color: { argb: 'FF64748B' } };
+      } else if (colNum === 7) { // Qty
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+      } else if (colNum === 8) { // Omzet
+        cell.numFmt = '"Rp "#,##0';
+        cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF005CE6' } };
+      } else if (colNum === 9) { // Modal HPP
+        cell.numFmt = '"Rp "#,##0';
+        cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        cell.font = { name: 'Arial', size: 9.5, color: { argb: 'FF64748B' } };
+      } else if (colNum === 10) { // Laba Kotor
+        cell.numFmt = '"Rp "#,##0';
+        cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        const isProfit = laba >= 0;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isProfit ? 'FFECFDF5' : 'FFFEF2F2' } };
+        cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: isProfit ? 'FF059669' : 'FFDC2626' } };
+      }
+    });
+  });
+
+  // 5. Baris Total Keseluruhan
+  const totalRow = sheet.addRow([
+    'TOTAL KESELURUHAN',
+    '',
+    '',
+    '',
+    '',
+    '',
+    totalQty,
+    totalOmzet,
+    totalModal,
+    totalLaba
+  ]);
+  const totalRowNum = totalRow.number;
+  totalRow.height = 28;
+
+  sheet.mergeCells(`A${totalRowNum}:F${totalRowNum}`);
+  const totalLabelCell = sheet.getCell(`A${totalRowNum}`);
+  totalLabelCell.value = 'TOTAL KESELURUHAN';
+  totalLabelCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  totalRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF005CE6' } },
+      bottom: { style: 'double', color: { argb: 'FFFFFFFF' } },
+      left: { style: 'thin', color: { argb: 'FF334155' } },
+      right: { style: 'thin', color: { argb: 'FF334155' } }
+    };
+
+    if (colNum === 7) { // Qty
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    } else if (colNum >= 8) { // Omzet, Modal, Laba
+      cell.numFmt = '"Rp "#,##0';
+      cell.alignment = { vertical: 'middle', horizontal: 'right' };
+      if (colNum === 8) {
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF60A5FA' } }; // Light blue
+      } else if (colNum === 10) {
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: totalLaba >= 0 ? 'FF34D399' : 'FFF87171' } }; // Light green/red
+      }
+    }
+  });
+
+  // 6. Generate file buffer dan trigger download
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const cleanPeriod = activePeriodLabel.value.replace(/[^a-zA-Z0-9_-]/g, '_');
+  a.download = `Laporan_Laba_Rugi_Citra23_${cleanPeriod}.xlsx`;
+  a.click();
+  window.URL.revokeObjectURL(url);
 };
 
 onMounted(() => {
