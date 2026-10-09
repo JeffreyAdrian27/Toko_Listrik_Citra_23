@@ -35,6 +35,7 @@ const getLaporanLabaRugi = async (req, res) => {
     const queryPerBarang = `
       SELECT 
         p.barang_id,
+        p.tanggal,
         p.kode_barang,
         p.nama_barang,
         p.harga_modal as MOD_kode,
@@ -46,8 +47,8 @@ const getLaporanLabaRugi = async (req, res) => {
       FROM penjualan p
       LEFT JOIN master_mod m ON m.nama_mod = p.harga_modal
       WHERE p.status = 'aktif' ${dateConditionPenjualan}
-      GROUP BY p.barang_id, p.kode_barang, p.nama_barang, p.harga_modal, m.harga_beli
-      ORDER BY total_omzet DESC
+      GROUP BY p.tanggal, p.barang_id, p.kode_barang, p.nama_barang, p.harga_modal, m.harga_beli
+      ORDER BY p.tanggal DESC, total_omzet DESC
     `;
     const [itemRows] = await pool.execute(queryPerBarang, paramsPenjualan);
 

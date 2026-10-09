@@ -64,7 +64,11 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in items" :key="item.id">
+              <tr
+                v-for="item in items"
+                :key="item.id"
+                :style="isModalLebihTinggi(item) ? 'background: #FFF8F8;' : ''"
+              >
                 <td>
                   <span class="badge badge-blue" style="font-weight: 700;">{{ item.kode_barang }}</span>
                 </td>
@@ -79,14 +83,29 @@
                     {{ item.nama_kategori || '-' }}
                   </span>
                 </td>
-                <!-- Kolom MOD sesuai format kode huruf rahasia modal (foto 1) -->
+                <!-- Kolom MOD sesuai format kode huruf rahasia modal -->
                 <td style="text-align: center;">
-                  <span class="badge" style="background: #EBF3FF; color: #005CE6; font-weight: 800; font-family: monospace; font-size: 0.9rem; letter-spacing: 0.05em; padding: 4px 10px;">
+                  <span
+                    class="badge"
+                    :style="isModalLebihTinggi(item) ? 'background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; font-weight: 800; font-family: monospace; font-size: 0.9rem; letter-spacing: 0.05em; padding: 4px 10px;' : 'background: #EBF3FF; color: #005CE6; font-weight: 800; font-family: monospace; font-size: 0.9rem; letter-spacing: 0.05em; padding: 4px 10px;'"
+                  >
                     {{ item.MOD || '-' }}
                   </span>
                 </td>
-                <td class="num" style="text-align: right; font-weight: 700; color: var(--color-primary);">
-                  Rp {{ formatNumber(item.harga_jual) }}
+                <td class="num" style="text-align: right;">
+                  <div style="font-weight: 700;" :style="{ color: isModalLebihTinggi(item) ? '#DC2626' : 'var(--color-primary)' }">
+                    Rp {{ formatNumber(item.harga_jual) }}
+                  </div>
+                  <!-- Warning jika Harga Beli (MOD) > Harga Jual -->
+                  <div
+                    v-if="isModalLebihTinggi(item)"
+                    class="badge"
+                    style="background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; font-size: 0.7rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 6px; border-radius: 4px;"
+                    :title="`Peringatan: Modal MOD (Rp ${formatNumber(item.modal_harga_beli)}) lebih tinggi dari Harga Jual (Rp ${formatNumber(item.harga_jual)})!`"
+                  >
+                    <AlertTriangle :size="12" />
+                    <span>MOD &gt; Jual (Rugi)</span>
+                  </div>
                 </td>
                 <td style="text-align: center;">
                   <span
@@ -252,6 +271,18 @@
               </div>
             </div>
 
+            <!-- Warning jika MOD > Harga Jual di form tambah/edit barang -->
+            <div
+              v-if="isFormModalLebihTinggi"
+              class="badge badge-danger"
+              style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; font-size: 0.825rem; line-height: 1.4; text-align: left;"
+            >
+              <AlertTriangle :size="18" style="flex-shrink: 0;" />
+              <span>
+                <strong>Peringatan Jual Rugi:</strong> Modal MOD <strong>{{ selectedFormMod.nama_mod }}</strong> (Rp {{ formatNumber(selectedFormMod.harga_beli) }}) lebih tinggi dari Harga Jual (Rp {{ formatNumber(itemForm.harga_jual) }}).
+              </span>
+            </div>
+
             <div v-if="!editingId" class="form-group">
               <label class="form-label" for="stok_awal">Stok Awal (Unit)</label>
               <input
@@ -343,6 +374,18 @@
               </div>
             </div>
 
+            <!-- Warning jika modal baru > harga jual saat ini -->
+            <div
+              v-if="isTambahStokModalLebihTinggi"
+              class="badge badge-danger"
+              style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; font-size: 0.825rem; line-height: 1.4; text-align: left;"
+            >
+              <AlertTriangle :size="18" style="flex-shrink: 0;" />
+              <span>
+                <strong>Peringatan Jual Rugi:</strong> Modal baru <strong>{{ selectedTambahStokMod.nama_mod }}</strong> (Rp {{ formatNumber(selectedTambahStokMod.harga_beli) }}) lebih tinggi dari Harga Jual barang saat ini (Rp {{ formatNumber(activeStockItem?.harga_jual) }}).
+              </span>
+            </div>
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
               <div class="form-group">
                 <label class="form-label" for="jumlah_masuk">Jumlah Masuk (Unit)</label>
@@ -381,7 +424,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
 import api from '../api';
 import {
@@ -391,6 +434,7 @@ import {
   PlusCircle,
   Edit2,
   Trash2,
+  AlertTriangle,
   X
 } from 'lucide-vue-next';
 
@@ -407,6 +451,39 @@ const fetchMods = async () => {
     console.error('Failed to load mods:', err);
   }
 };
+
+// Deteksi apakah Harga Beli (MOD) > Harga Jual
+const isModalLebihTinggi = (item) => {
+  const modal = parseFloat(item.modal_harga_beli || 0);
+  const jual = parseFloat(item.harga_jual || 0);
+  return modal > 0 && modal > jual;
+};
+
+// Form Tambah/Edit Barang: Cek MOD vs Harga Jual
+const selectedFormMod = computed(() => {
+  if (!itemForm.MOD) return null;
+  return registeredMods.value.find(m => m.nama_mod === itemForm.MOD) || null;
+});
+
+const isFormModalLebihTinggi = computed(() => {
+  if (!selectedFormMod.value) return false;
+  const modal = parseFloat(selectedFormMod.value.harga_beli || 0);
+  const jual = parseFloat(itemForm.harga_jual || 0);
+  return modal > 0 && modal > jual;
+});
+
+// Modal Tambah Stok: Cek MOD vs Harga Jual
+const selectedTambahStokMod = computed(() => {
+  if (!tambahStokForm.harga_baru_modal_satuan) return null;
+  return registeredMods.value.find(m => m.nama_mod === tambahStokForm.harga_baru_modal_satuan) || null;
+});
+
+const isTambahStokModalLebihTinggi = computed(() => {
+  if (!selectedTambahStokMod.value || !activeStockItem.value) return false;
+  const modal = parseFloat(selectedTambahStokMod.value.harga_beli || 0);
+  const jual = parseFloat(activeStockItem.value.harga_jual || 0);
+  return modal > 0 && modal > jual;
+});
 
 const filters = reactive({
   search: '',

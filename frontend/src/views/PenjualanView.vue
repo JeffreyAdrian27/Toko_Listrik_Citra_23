@@ -208,8 +208,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(tx, idx) in todayList" :key="tx.id" :class="{ 'row-voided': tx.status === 'batal' }">
-                <td>{{ idx + 1 }}</td>
+              <tr v-for="(tx, idx) in paginatedToday" :key="tx.id" :class="{ 'row-voided': tx.status === 'batal' }">
+                <td>{{ (todayPage - 1) * todayPageSize + idx + 1 }}</td>
                 <td style="font-size: 0.8rem; color: var(--text-muted);">
                   {{ formatTime(tx.created_at) }}
                 </td>
@@ -258,16 +258,53 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Pagination Penjualan Hari Ini (5 Transaksi per Halaman) -->
+        <div v-if="todayList.length > 0" style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px; padding: 14px 20px; border-top: 1px solid var(--border-light); flex-wrap: wrap; gap: 10px;">
+          <span style="font-size: 0.85rem; color: var(--text-muted);">
+            Menampilkan halaman <strong>{{ todayPage }}</strong> dari <strong>{{ todayTotalPages }}</strong> (Total <strong>{{ todayList.length }}</strong> transaksi &bull; 5 per halaman)
+          </span>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button
+              @click="todayPage--"
+              :disabled="todayPage <= 1"
+              class="btn btn-sm btn-secondary"
+              title="Halaman Sebelumnya"
+            >
+              &larr; Sebelumnya
+            </button>
+            
+            <button
+              v-for="p in todayTotalPages"
+              :key="p"
+              @click="todayPage = p"
+              class="btn btn-sm"
+              :class="todayPage === p ? 'btn-primary' : 'btn-secondary'"
+              style="min-width: 32px; padding: 4px 8px; font-weight: 700;"
+            >
+              {{ p }}
+            </button>
+
+            <button
+              @click="todayPage++"
+              :disabled="todayPage >= todayTotalPages"
+              class="btn btn-sm btn-secondary"
+              title="Halaman Selanjutnya"
+            >
+              Selanjutnya &rarr;
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Tab 2: Riwayat Bulanan (Admin Only) -->
       <div v-if="activeTab === 'riwayat' && auth.isAdmin" class="card">
         <div class="card-header">
           <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-            <select v-model="historyFilter.bulan" @change="fetchHistory" class="form-select" style="width: 140px;">
+            <select v-model="historyFilter.bulan" @change="onHistoryFilterChange" class="form-select" style="width: 140px;">
               <option v-for="(m, i) in monthNames" :key="i" :value="i + 1">{{ m }}</option>
             </select>
-            <select v-model="historyFilter.tahun" @change="fetchHistory" class="form-select" style="width: 110px;">
+            <select v-model="historyFilter.tahun" @change="onHistoryFilterChange" class="form-select" style="width: 110px;">
               <option v-for="y in [2024, 2025, 2026, 2027]" :key="y" :value="y">{{ y }}</option>
             </select>
           </div>
@@ -280,6 +317,7 @@
           <table class="table">
             <thead>
               <tr>
+                <th>No</th>
                 <th>Tanggal</th>
                 <th>Kode</th>
                 <th>Nama Produk</th>
@@ -292,7 +330,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in historyData.data" :key="item.id" :class="{ 'row-voided': item.status === 'batal' }">
+              <tr v-for="(item, idx) in paginatedHistory" :key="item.id" :class="{ 'row-voided': item.status === 'batal' }">
+                <td>{{ (historyPage - 1) * historyPageSize + idx + 1 }}</td>
                 <td style="font-size: 0.8rem;">{{ formatDate(item.tanggal) }}</td>
                 <td><span class="badge badge-blue">{{ item.kode_barang }}</span></td>
                 <td style="font-weight: 600;">{{ item.nama_barang }}</td>
@@ -326,12 +365,49 @@
                 </td>
               </tr>
               <tr v-if="!historyData.data || historyData.data.length === 0">
-                <td colspan="9" style="text-align: center; padding: 24px; color: var(--text-muted);">
+                <td colspan="10" style="text-align: center; padding: 24px; color: var(--text-muted);">
                   Tidak ada data penjualan pada periode ini.
                 </td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Pagination Riwayat Bulanan (5 Transaksi per Halaman) -->
+        <div v-if="historyData.data && historyData.data.length > 0" style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px; padding: 14px 20px; border-top: 1px solid var(--border-light); flex-wrap: wrap; gap: 10px;">
+          <span style="font-size: 0.85rem; color: var(--text-muted);">
+            Menampilkan halaman <strong>{{ historyPage }}</strong> dari <strong>{{ historyTotalPages }}</strong> (Total <strong>{{ historyData.data.length }}</strong> transaksi &bull; 5 per halaman)
+          </span>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button
+              @click="historyPage--"
+              :disabled="historyPage <= 1"
+              class="btn btn-sm btn-secondary"
+              title="Halaman Sebelumnya"
+            >
+              &larr; Sebelumnya
+            </button>
+            
+            <button
+              v-for="p in historyTotalPages"
+              :key="p"
+              @click="historyPage = p"
+              class="btn btn-sm"
+              :class="historyPage === p ? 'btn-primary' : 'btn-secondary'"
+              style="min-width: 32px; padding: 4px 8px; font-weight: 700;"
+            >
+              {{ p }}
+            </button>
+
+            <button
+              @click="historyPage++"
+              :disabled="historyPage >= historyTotalPages"
+              class="btn btn-sm btn-secondary"
+              title="Halaman Selanjutnya"
+            >
+              Selanjutnya &rarr;
+            </button>
+          </div>
         </div>
       </div>
 
@@ -495,6 +571,19 @@ const activeTab = ref('hari-ini');
 const todayList = ref([]);
 const todayTotalOmzet = ref(0);
 
+// Pagination Penjualan Hari Ini: 5 transaksi per halaman
+const todayPage = ref(1);
+const todayPageSize = 5;
+
+const paginatedToday = computed(() => {
+  const start = (todayPage.value - 1) * todayPageSize;
+  return todayList.value.slice(start, start + todayPageSize);
+});
+
+const todayTotalPages = computed(() => {
+  return Math.ceil(todayList.value.length / todayPageSize) || 1;
+});
+
 const monthNames = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
@@ -506,6 +595,24 @@ const historyFilter = reactive({
   tahun: new Date().getFullYear()
 });
 const historyData = ref({ data: [], total_omzet: 0, total_transaksi_aktif: 0 });
+
+// Pagination Riwayat Bulanan: 5 transaksi per halaman
+const historyPage = ref(1);
+const historyPageSize = 5;
+
+const paginatedHistory = computed(() => {
+  const start = (historyPage.value - 1) * historyPageSize;
+  return (historyData.value.data || []).slice(start, start + historyPageSize);
+});
+
+const historyTotalPages = computed(() => {
+  return Math.ceil((historyData.value.data?.length || 0) / historyPageSize) || 1;
+});
+
+const onHistoryFilterChange = () => {
+  historyPage.value = 1;
+  fetchHistory();
+};
 
 // Chart State
 const chartFilter = reactive({
@@ -573,8 +680,10 @@ const submitSale = async () => {
     selectedItem.value = null;
     saleQty.value = 1;
 
+    todayPage.value = 1;
     fetchTodaySales();
     if (auth.isAdmin) {
+      historyPage.value = 1;
       fetchHistory();
       fetchStats();
     }
@@ -590,6 +699,9 @@ const fetchTodaySales = async () => {
     const res = await api.get('/penjualan/hari-ini');
     todayList.value = res.data.data;
     todayTotalOmzet.value = res.data.total_omzet;
+    if (todayPage.value > todayTotalPages.value) {
+      todayPage.value = Math.max(1, todayTotalPages.value);
+    }
   } catch (err) {
     console.error('Failed to load today sales:', err);
   }
@@ -602,6 +714,9 @@ const fetchHistory = async () => {
       params: { bulan: historyFilter.bulan, tahun: historyFilter.tahun }
     });
     historyData.value = res.data;
+    if (historyPage.value > historyTotalPages.value) {
+      historyPage.value = Math.max(1, historyTotalPages.value);
+    }
   } catch (err) {
     console.error('Failed to load history:', err);
   }
