@@ -39,13 +39,24 @@
             <input
               id="password"
               v-model="password"
-              type="password"
-              class="form-input"
+              :type="showPassword ? 'text' : 'password'"
+              class="form-input password-input"
               placeholder="Masukkan password"
               required
               autocomplete="current-password"
               :disabled="loading"
             />
+            <button
+              type="button"
+              class="password-toggle-btn"
+              @click="showPassword = !showPassword"
+              :title="showPassword ? 'Sembunyikan password' : 'Lihat password'"
+              :aria-label="showPassword ? 'Sembunyikan password' : 'Lihat password'"
+              tabindex="-1"
+            >
+              <EyeOff v-if="showPassword" :size="18" />
+              <Eye v-else :size="18" />
+            </button>
           </div>
         </div>
 
@@ -72,13 +83,14 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
-import { Zap, User, Lock, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-vue-next';
+import { Zap, User, Lock, ArrowRight, AlertCircle, ShieldCheck, Eye, EyeOff } from 'lucide-vue-next';
 
 const router = useRouter();
 const auth = useAuthStore();
 
 const username = ref('');
 const password = ref('');
+const showPassword = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
 
@@ -185,6 +197,37 @@ const submitLogin = async () => {
 
 .input-with-icon input {
   padding-left: 38px;
+}
+
+.password-input {
+  padding-right: 42px !important;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.password-toggle-btn:hover {
+  color: #005CE6;
+  background: #F1F5F9;
+}
+
+.password-toggle-btn:focus-visible {
+  outline: 2px solid #005CE6;
+  outline-offset: 1px;
 }
 
 .btn-block {

@@ -12,6 +12,7 @@ const laporanRoutes = require('./routes/laporanRoutes');
 const pegawaiRoutes = require('./routes/pegawaiRoutes');
 const activityRoutes = require('./routes/activityRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const modRoutes = require('./routes/modRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -51,6 +52,7 @@ app.use('/api/laporan', laporanRoutes);
 app.use('/api/pegawai', pegawaiRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/mod', modRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

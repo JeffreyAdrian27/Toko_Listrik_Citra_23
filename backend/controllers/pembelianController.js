@@ -41,13 +41,21 @@ const createPembelian = async (req, res) => {
 
     const item = rows[0];
 
+    // Lookup unit cost from master_mod if available
+    const [modLookup] = await connection.execute(
+      'SELECT harga_beli FROM master_mod WHERE nama_mod = ?',
+      [costCode]
+    );
+    const unitCost = modLookup.length > 0 ? parseFloat(modLookup[0].harga_beli) : 0;
+    const totalPembayaran = unitCost * qty;
+
     // 1. Insert into pembelian
     const [result] = await connection.execute(`
       INSERT INTO pembelian (
         barang_id, kode_barang, nama_barang, harga_lama,
         harga_baru_modal_satuan, jumlah_masuk, total_pembayaran,
         tanggal, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       item.id,
       item.kode_barang,
@@ -55,6 +63,7 @@ const createPembelian = async (req, res) => {
       item.MOD || null,
       costCode,
       qty,
+      totalPembayaran,
       purchaseDate,
       req.user.id
     ]);
@@ -104,7 +113,15 @@ const createPembelian = async (req, res) => {
 const getPembelianHistory = async (req, res) => {
   try {
     const year = parseInt(req.query.tahun || new Date().getFullYear(), 10);
-    const month = parseInt(req.query.bulan || new Date().getMonth() + 1, 10);
+    const month = req.query.bulan && req.query.bulan !== 'all' ? parseInt(req.query.bulan, 10) : null;
+
+    let whereClause = 'WHERE YEAR(pb.tanggal) = ?';
+    const params = [year];
+
+    if (month) {
+      whereClause += ' AND MONTH(pb.tanggal) = ?';
+      params.push(month);
+    }
 
     const [rows] = await pool.execute(`
       SELECT 
@@ -113,15 +130,15 @@ const getPembelianHistory = async (req, res) => {
         pb.tanggal, pb.created_at, u.nama as created_by_nama
       FROM pembelian pb
       LEFT JOIN users u ON pb.created_by = u.id
-      WHERE YEAR(pb.tanggal) = ? AND MONTH(pb.tanggal) = ?
+      ${whereClause}
       ORDER BY pb.tanggal DESC, pb.id DESC
-    `, [year, month]);
+    `, params);
 
     const totalQty = rows.reduce((sum, r) => sum + parseInt(r.jumlah_masuk, 10), 0);
 
     return res.json({
       tahun: year,
-      bulan: month,
+      bulan: month || 'all',
       data: rows,
       total_qty: totalQty,
       total_transaksi: rows.length

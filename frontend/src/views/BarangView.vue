@@ -128,18 +128,28 @@
           </table>
         </div>
 
-        <!-- Pagination -->
-        <div v-if="pagination.totalPages > 1" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+        <!-- Pagination (10 Barang per Halaman) -->
+        <div v-if="pagination.total > 0" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding: 14px 20px; border-top: 1px solid var(--border-light); flex-wrap: wrap; gap: 10px;">
           <span style="font-size: 0.85rem; color: var(--text-muted);">
-            Menampilkan halaman {{ pagination.page }} dari {{ pagination.totalPages }} (Total {{ pagination.total }} barang)
+            Menampilkan halaman <strong>{{ pagination.page }}</strong> dari <strong>{{ pagination.totalPages }}</strong> (Total <strong>{{ pagination.total }}</strong> barang &bull; 10 per halaman)
           </span>
-          <div style="display: flex; gap: 8px;">
+          <div style="display: flex; gap: 6px; align-items: center;">
             <button
               @click="changePage(pagination.page - 1)"
               :disabled="pagination.page <= 1"
               class="btn btn-sm btn-secondary"
             >
               &larr; Sebelumnya
+            </button>
+            <button
+              v-for="p in pagination.totalPages"
+              :key="p"
+              @click="changePage(p)"
+              class="btn btn-sm"
+              :class="pagination.page === p ? 'btn-primary' : 'btn-secondary'"
+              style="min-width: 32px; padding: 4px 8px; font-weight: 700;"
+            >
+              {{ p }}
             </button>
             <button
               @click="changePage(pagination.page + 1)"
@@ -206,19 +216,26 @@
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-              <!-- Input MOD Kode Huruf Modal -->
+              <!-- Input MOD Kode Huruf Modal dari Master MOD -->
               <div class="form-group">
                 <label class="form-label" for="mod_input">MOD (Kode Huruf Modal)</label>
-                <input
+                <select
                   id="mod_input"
                   v-model="itemForm.MOD"
-                  type="text"
-                  class="form-input"
-                  placeholder="Contoh: CA, DT, CDS, TBA"
-                  style="text-transform: uppercase; font-family: monospace; font-weight: 700; letter-spacing: 0.05em;"
+                  class="form-select"
+                  style="font-family: monospace; font-weight: 700; letter-spacing: 0.05em;"
                   required
-                />
-                <p class="form-help">Kode rahasia modal (mis. T, CA, DT, CDS, X, dll.).</p>
+                >
+                  <option value="" disabled>-- Pilih Kode MOD --</option>
+                  <option
+                    v-for="m in registeredMods"
+                    :key="m.id"
+                    :value="m.nama_mod"
+                  >
+                    {{ m.nama_mod }} (Rp {{ formatNumber(m.harga_beli) }})
+                  </option>
+                </select>
+                <p class="form-help">Pilih dari Master Data MOD yang sudah didaftarkan.</p>
               </div>
 
               <div class="form-group">
@@ -306,16 +323,23 @@
 
               <div class="form-group">
                 <label class="form-label" for="harga_baru_modal">HARGA BARU MODAL SATUAN</label>
-                <input
+                <select
                   id="harga_baru_modal"
                   v-model="tambahStokForm.harga_baru_modal_satuan"
-                  type="text"
-                  class="form-input"
-                  placeholder="Mis: CDL, DT, SXL"
-                  style="text-transform: uppercase; font-family: monospace; font-weight: 800; font-size: 1.05rem; text-align: center; color: var(--color-primary);"
+                  class="form-select"
+                  style="font-family: monospace; font-weight: 800; font-size: 1rem; color: var(--color-primary);"
                   required
-                />
-                <p class="form-help">Masukkan kode huruf baru.</p>
+                >
+                  <option value="" disabled>-- Pilih Kode MOD --</option>
+                  <option
+                    v-for="m in registeredMods"
+                    :key="m.id"
+                    :value="m.nama_mod"
+                  >
+                    {{ m.nama_mod }} &bull; Rp {{ formatNumber(m.harga_beli) }}
+                  </option>
+                </select>
+                <p class="form-help">Pilih kode huruf modal dari Master MOD.</p>
               </div>
             </div>
 
@@ -372,7 +396,17 @@ import {
 
 const items = ref([]);
 const categories = ref([]);
+const registeredMods = ref([]);
 const loading = ref(true);
+
+const fetchMods = async () => {
+  try {
+    const res = await api.get('/mod');
+    registeredMods.value = res.data || [];
+  } catch (err) {
+    console.error('Failed to load mods:', err);
+  }
+};
 
 const filters = reactive({
   search: '',
@@ -382,7 +416,7 @@ const filters = reactive({
 
 const pagination = reactive({
   page: 1,
-  limit: 20,
+  limit: 10,
   total: 0,
   totalPages: 1
 });
@@ -550,6 +584,7 @@ const formatNumber = (num) => {
 
 onMounted(() => {
   fetchCategories();
+  fetchMods();
   fetchBarang();
 });
 </script>

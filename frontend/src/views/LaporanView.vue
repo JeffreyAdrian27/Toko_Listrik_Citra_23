@@ -5,9 +5,14 @@
       <div class="card-header">
         <div style="display: flex; align-items: center; gap: 10px;">
           <BarChart3 :size="20" style="color: var(--color-primary);" />
-          <h3 class="card-title">Laporan Penjualan & Keuangan Toko Citra 23</h3>
+          <div>
+            <h3 class="card-title">Laporan Laba Rugi &amp; Keuangan Toko Citra 23</h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">
+              Perhitungan Omzet, HPP berdasarkan Master MOD, dan estimasi keuntungan bersih toko.
+            </p>
+          </div>
         </div>
-        <div style="display: flex; gap: 10px;">
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
           <button @click="exportToPDF" class="btn btn-sm btn-secondary" style="font-weight: 700; color: #DC2626; border-color: #FECACA;">
             <FileText :size="16" />
             <span>Ekspor PDF</span>
@@ -63,8 +68,9 @@
       </div>
     </div>
 
-    <!-- Ringkasan Cards Finansial -->
+    <!-- Ringkasan Cards Finansial (Laba Rugi Otomatis dari MOD) -->
     <div class="stats-grid">
+      <!-- 1. Omzet Penjualan -->
       <div class="stat-card">
         <div class="stat-content">
           <div class="stat-label">Total Omzet Penjualan</div>
@@ -78,42 +84,56 @@
         </div>
       </div>
 
+      <!-- 2. Total Modal HPP (Dari Master MOD) -->
+      <div class="stat-card">
+        <div class="stat-content">
+          <div class="stat-label">Total Modal (HPP MOD)</div>
+          <div class="stat-value amount" style="color: #64748B;">
+            Rp {{ formatNumber(reportData.ringkasan?.total_modal_hpp) }}
+          </div>
+          <div class="stat-sub">Harga pokok barang terjual</div>
+        </div>
+        <div class="stat-icon" style="background: #F1F5F9; color: #475569;">
+          <Coins :size="24" />
+        </div>
+      </div>
+
+      <!-- 3. Estimasi Laba Kotor (Omzet - HPP) -->
+      <div class="stat-card">
+        <div class="stat-content">
+          <div class="stat-label">Estimasi Laba Kotor</div>
+          <div
+            class="stat-value amount"
+            :style="{ color: (reportData.ringkasan?.total_laba_kotor || 0) >= 0 ? '#059669' : '#DC2626' }"
+          >
+            Rp {{ formatNumber(reportData.ringkasan?.total_laba_kotor) }}
+          </div>
+          <div class="stat-sub">
+            Margin: <strong>{{ reportData.ringkasan?.margin_laba_persen || 0 }}%</strong>
+          </div>
+        </div>
+        <div
+          class="stat-icon"
+          :style="{
+            background: (reportData.ringkasan?.total_laba_kotor || 0) >= 0 ? '#ECFDF5' : '#FEF2F2',
+            color: (reportData.ringkasan?.total_laba_kotor || 0) >= 0 ? '#059669' : '#DC2626'
+          }"
+        >
+          <DollarSign :size="24" />
+        </div>
+      </div>
+
+      <!-- 4. Total Volume Penjualan -->
       <div class="stat-card">
         <div class="stat-content">
           <div class="stat-label">Total Unit Terjual</div>
           <div class="stat-value amount">
             {{ reportData.ringkasan?.total_qty_terjual || 0 }} unit
           </div>
-          <div class="stat-sub">Volume barang kelistrikan laku</div>
-        </div>
-        <div class="stat-icon" style="background: #F1F5F9; color: #475569;">
-          <Receipt :size="24" />
-        </div>
-      </div>
-
-      <div class="stat-card">
-        <div class="stat-content">
-          <div class="stat-label">Total Pasokan Masuk</div>
-          <div class="stat-value amount" style="color: var(--status-success);">
-            +{{ reportData.ringkasan?.total_pembelian_unit || 0 }} unit
-          </div>
-          <div class="stat-sub">Pasokan stok yang dicatat</div>
-        </div>
-        <div class="stat-icon green">
-          <Truck :size="24" />
-        </div>
-      </div>
-
-      <div class="stat-card">
-        <div class="stat-content">
-          <div class="stat-label">Transaksi Pembelian</div>
-          <div class="stat-value amount">
-            {{ reportData.ringkasan?.total_transaksi_beli || 0 }} kali
-          </div>
-          <div class="stat-sub">Frekuensi pasokan tercatat</div>
+          <div class="stat-sub">Pasokan masuk: +{{ reportData.ringkasan?.total_pembelian_unit || 0 }} unit</div>
         </div>
         <div class="stat-icon blue">
-          <DollarSign :size="24" />
+          <Receipt :size="24" />
         </div>
       </div>
     </div>
@@ -121,7 +141,7 @@
     <!-- Rincian Penjualan per Barang & Kode MOD -->
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title">Rincian Penjualan & Kode MOD per Barang</h3>
+        <h3 class="card-title">Rincian Penjualan, Nilai MOD &amp; Keuntungan per Barang</h3>
         <span style="font-size: 0.85rem; color: var(--text-muted);">
           Periode: <strong>{{ activePeriodLabel }}</strong>
         </span>
@@ -131,12 +151,15 @@
         <table class="table">
           <thead>
             <tr>
-              <th style="width: 60px;">No</th>
+              <th style="width: 50px;">No</th>
               <th>Kode Barang</th>
               <th>Nama Produk</th>
-              <th style="text-align: center; width: 110px;">MOD</th>
-              <th style="text-align: center;">Terjual</th>
-              <th style="text-align: right;">Total Omzet</th>
+              <th style="text-align: center; width: 100px;">MOD</th>
+              <th style="text-align: right; width: 130px;">Modal/Unit</th>
+              <th style="text-align: center; width: 100px;">Terjual</th>
+              <th style="text-align: right; width: 140px;">Total Omzet</th>
+              <th style="text-align: right; width: 140px;">Total Modal</th>
+              <th style="text-align: right; width: 150px;">Laba Kotor</th>
             </tr>
           </thead>
           <tbody>
@@ -149,13 +172,26 @@
                   {{ item.MOD_kode || '-' }}
                 </span>
               </td>
+              <td class="num" style="text-align: right; color: #64748B;">
+                Rp {{ formatNumber(item.harga_beli_modal) }}
+              </td>
               <td class="num" style="text-align: center; font-weight: 700;">{{ item.total_terjual }} unit</td>
               <td class="num" style="text-align: right; font-weight: 700; color: var(--color-primary);">
                 Rp {{ formatNumber(item.total_omzet) }}
               </td>
+              <td class="num" style="text-align: right; color: #64748B;">
+                Rp {{ formatNumber(item.total_modal_hpp) }}
+              </td>
+              <td
+                class="num"
+                style="text-align: right; font-weight: 700;"
+                :style="{ color: Number(item.total_laba_kotor) >= 0 ? '#059669' : '#DC2626' }"
+              >
+                Rp {{ formatNumber(item.total_laba_kotor) }}
+              </td>
             </tr>
             <tr v-if="!reportData.rincian_barang || reportData.rincian_barang.length === 0">
-              <td colspan="6" style="text-align: center; padding: 32px; color: var(--text-muted);">
+              <td colspan="9" style="text-align: center; padding: 32px; color: var(--text-muted);">
                 Tidak ada data transaksi pada periode ini.
               </td>
             </tr>
@@ -175,7 +211,7 @@ import {
   TrendingUp,
   Receipt,
   DollarSign,
-  Truck,
+  Coins,
   FileText,
   FileSpreadsheet,
   RefreshCw
@@ -199,15 +235,28 @@ const filterEndDate = ref(new Date().toISOString().split('T')[0]);
 const reportData = ref({
   ringkasan: {
     total_omzet: 0,
+    total_modal_hpp: 0,
+    total_laba_kotor: 0,
+    margin_laba_persen: 0,
     total_qty_terjual: 0,
     total_pembelian_unit: 0,
+    total_biaya_pembelian: 0,
     total_transaksi_beli: 0
   },
   rincian_barang: []
 });
 
-// Periode yang ditampilkan hanya diperbarui saat tombol "Tampilkan Laporan" diklik
-const activePeriodLabel = ref('');
+const activePeriodLabel = computed(() => {
+  if (filterMode.value === 'bulan') {
+    return `${monthNames[filterMonth.value - 1]} ${filterYear.value}`;
+  }
+  return `${filterStartDate.value} s/d ${filterEndDate.value}`;
+});
+
+const formatNumber = (num) => {
+  if (num === null || num === undefined || isNaN(num)) return '0';
+  return new Intl.NumberFormat('id-ID').format(num);
+};
 
 const fetchLaporan = async () => {
   try {
@@ -215,27 +264,24 @@ const fetchLaporan = async () => {
     if (filterMode.value === 'bulan') {
       params.bulan = filterMonth.value;
       params.tahun = filterYear.value;
-      activePeriodLabel.value = `${monthNames[filterMonth.value - 1]} ${filterYear.value}`;
     } else {
       params.dari_tanggal = filterStartDate.value;
       params.sampai_tanggal = filterEndDate.value;
-      activePeriodLabel.value = `${filterStartDate.value} s/d ${filterEndDate.value}`;
     }
 
     const res = await api.get('/laporan/laba-rugi', { params });
     reportData.value = res.data;
   } catch (err) {
-    console.error('Failed to load report:', err);
+    console.error('fetchLaporan error:', err);
   }
 };
 
-const formatNumber = (num) => Number(num || 0).toLocaleString('id-ID');
-
 // Export to PDF
 const exportToPDF = () => {
-  const doc = new jsPDF();
-  const title = 'Laporan Penjualan — Toko Listrik Citra 23 Palu';
-  const subtitle = `Periode: ${activePeriodLabel.value}`;
+  const doc = new jsPDF('p', 'mm', 'a4');
+
+  const title = 'Laporan Laba Rugi & Keuangan';
+  const subtitle = `Toko Listrik Citra 23 Palu | Periode: ${activePeriodLabel.value}`;
 
   // Header Banner
   doc.setFillColor(0, 92, 230); // #005CE6
@@ -254,11 +300,13 @@ const exportToPDF = () => {
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text('Ringkasan:', 14, 38);
+  doc.text('Ringkasan Keuangan:', 14, 38);
 
   const ringkasan = reportData.value.ringkasan || {};
   const summaryRows = [
     ['Total Penjualan (Omzet)', `Rp ${formatNumber(ringkasan.total_omzet)}`],
+    ['Total Modal HPP (Berdasarkan MOD)', `Rp ${formatNumber(ringkasan.total_modal_hpp)}`],
+    ['Estimasi Laba Kotor', `Rp ${formatNumber(ringkasan.total_laba_kotor)} (Margin ${ringkasan.margin_laba_persen || 0}%)`],
     ['Total Barang Terjual', `${ringkasan.total_qty_terjual || 0} unit`],
     ['Total Pasokan Masuk', `${ringkasan.total_pembelian_unit || 0} unit`]
   ];
@@ -267,8 +315,8 @@ const exportToPDF = () => {
     startY: 42,
     body: summaryRows,
     theme: 'plain',
-    styles: { fontSize: 10, cellPadding: 2 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 80 } }
+    styles: { fontSize: 9.5, cellPadding: 2 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 85 } }
   });
 
   // Table of Items
@@ -277,17 +325,20 @@ const exportToPDF = () => {
     it.kode_barang,
     it.nama_barang,
     it.MOD_kode || '-',
-    `${it.total_terjual} unit`,
-    `Rp ${formatNumber(it.total_omzet)}`
+    `Rp ${formatNumber(it.harga_beli_modal)}`,
+    `${it.total_terjual}`,
+    `Rp ${formatNumber(it.total_omzet)}`,
+    `Rp ${formatNumber(it.total_modal_hpp)}`,
+    `Rp ${formatNumber(it.total_laba_kotor)}`
   ]);
 
   autoTable(doc, {
-    startY: doc.lastAutoTable.finalY + 10,
-    head: [['No', 'Kode', 'Nama Barang', 'MOD', 'Terjual', 'Total Omzet']],
+    startY: doc.lastAutoTable.finalY + 8,
+    head: [['No', 'Kode', 'Nama Barang', 'MOD', 'Modal/Unit', 'Qty', 'Omzet', 'HPP', 'Laba Kotor']],
     body: tableData,
     headStyles: { fillColor: [0, 92, 230], textColor: [255, 255, 255], fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [248, 250, 252] },
-    styles: { fontSize: 8.5 }
+    styles: { fontSize: 7.5, cellPadding: 2 }
   });
 
   const pageCount = doc.internal.getNumberOfPages();
@@ -298,7 +349,7 @@ const exportToPDF = () => {
     doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')} | Halaman ${i} dari ${pageCount}`, 14, 290);
   }
 
-  doc.save(`Laporan_Penjualan_Citra23_${activePeriodLabel.value.replace(/\s+/g, '_')}.pdf`);
+  doc.save(`Laporan_Laba_Rugi_Citra23_${activePeriodLabel.value.replace(/\s+/g, '_')}.pdf`);
 };
 
 // Export to Excel
@@ -307,16 +358,19 @@ const exportToExcel = () => {
     'No': idx + 1,
     'Kode Barang': it.kode_barang,
     'Nama Barang': it.nama_barang,
-    'MOD': it.MOD_kode || '-',
+    'Kode MOD': it.MOD_kode || '-',
+    'Modal Satuan (Rp)': Number(it.harga_beli_modal),
     'Qty Terjual': Number(it.total_terjual),
-    'Total Omzet (Rp)': Number(it.total_omzet)
+    'Total Omzet (Rp)': Number(it.total_omzet),
+    'Total Modal HPP (Rp)': Number(it.total_modal_hpp),
+    'Laba Kotor (Rp)': Number(it.total_laba_kotor)
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(dataRows);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Rincian Penjualan');
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Rincian Laba Rugi');
 
-  XLSX.writeFile(workbook, `Laporan_Penjualan_Citra23_${activePeriodLabel.value.replace(/\s+/g, '_')}.xlsx`);
+  XLSX.writeFile(workbook, `Laporan_Laba_Rugi_Citra23_${activePeriodLabel.value.replace(/\s+/g, '_')}.xlsx`);
 };
 
 onMounted(() => {

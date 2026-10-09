@@ -51,6 +51,16 @@
           </router-link>
 
           <router-link
+            to="/mod"
+            class="nav-link"
+            :class="{ active: route.path === '/mod' }"
+            @click="mobileMenuOpen = false"
+          >
+            <KeyRound :size="18" class="icon" />
+            <span>Master MOD</span>
+          </router-link>
+
+          <router-link
             to="/barang"
             class="nav-link"
             :class="{ active: route.path === '/barang' }"
@@ -223,6 +233,7 @@ import {
   Zap,
   LayoutDashboard,
   Layers,
+  KeyRound,
   Package,
   ShoppingCart,
   Truck,

@@ -36,7 +36,7 @@ async function generateKodeBarang(connection, merk) {
 const getAllBarang = async (req, res) => {
   try {
     const page = parseInt(req.query.page || '1', 10);
-    const limit = parseInt(req.query.limit || '20', 10);
+    const limit = parseInt(req.query.limit || '10', 10);
     const offset = (page - 1) * limit;
     const search = req.query.search ? `%${req.query.search.trim()}%` : null;
     const kategoriId = req.query.kategori_id || null;
@@ -69,9 +69,10 @@ const getAllBarang = async (req, res) => {
       SELECT 
         b.id, b.kode_barang, b.nama_barang, b.kategori_id, k.nama_kategori,
         b.merk, b.stok_awal, b.total_masuk, b.total_keluar, b.stok_akhir,
-        b.\`MOD\`, b.harga_jual, b.keterangan, b.created_at
+        b.\`MOD\`, m.harga_beli as modal_harga_beli, b.harga_jual, b.keterangan, b.created_at
       FROM barang b
       LEFT JOIN kategori k ON b.kategori_id = k.id
+      LEFT JOIN master_mod m ON m.nama_mod = b.\`MOD\`
       ${whereClause}
       ORDER BY b.id DESC
       LIMIT ? OFFSET ?
