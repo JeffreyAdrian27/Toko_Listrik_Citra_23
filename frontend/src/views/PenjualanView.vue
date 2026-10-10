@@ -191,7 +191,13 @@
           </div>
         </div>
 
-        <div class="table-responsive">
+        <LoadingSpinner
+          v-if="todayLoading"
+          text="Memuat transaksi penjualan hari ini..."
+          minHeight="180px"
+        />
+
+        <div v-else class="table-responsive">
           <table class="table">
             <thead>
               <tr>
@@ -313,7 +319,13 @@
           </div>
         </div>
 
-        <div class="table-responsive">
+        <LoadingSpinner
+          v-if="historyLoading"
+          text="Memuat riwayat transaksi penjualan..."
+          minHeight="220px"
+        />
+
+        <div v-else class="table-responsive">
           <table class="table">
             <thead>
               <tr>
@@ -516,6 +528,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import { useAuthStore } from '../stores/auth';
 import api from '../api';
 import {
@@ -570,6 +583,8 @@ const errorMsg = ref('');
 const activeTab = ref('hari-ini');
 const todayList = ref([]);
 const todayTotalOmzet = ref(0);
+const todayLoading = ref(true);
+const historyLoading = ref(false);
 
 // Pagination Penjualan Hari Ini: 5 transaksi per halaman
 const todayPage = ref(1);
@@ -725,8 +740,13 @@ const submitSale = async () => {
 };
 
 const fetchTodaySales = async () => {
+  todayLoading.value = true;
+  const minDelay = new Promise(resolve => setTimeout(resolve, 400));
   try {
-    const res = await api.get('/penjualan/hari-ini');
+    const [res] = await Promise.all([
+      api.get('/penjualan/hari-ini'),
+      minDelay
+    ]);
     todayList.value = res.data.data;
     todayTotalOmzet.value = res.data.total_omzet;
     if (todayPage.value > todayTotalPages.value) {
@@ -734,21 +754,30 @@ const fetchTodaySales = async () => {
     }
   } catch (err) {
     console.error('Failed to load today sales:', err);
+  } finally {
+    todayLoading.value = false;
   }
 };
 
 const fetchHistory = async () => {
   if (!auth.isAdmin) return;
+  historyLoading.value = true;
+  const minDelay = new Promise(resolve => setTimeout(resolve, 400));
   try {
-    const res = await api.get('/penjualan/history', {
-      params: { bulan: historyFilter.bulan, tahun: historyFilter.tahun }
-    });
+    const [res] = await Promise.all([
+      api.get('/penjualan/history', {
+        params: { bulan: historyFilter.bulan, tahun: historyFilter.tahun }
+      }),
+      minDelay
+    ]);
     historyData.value = res.data;
     if (historyPage.value > historyTotalPages.value) {
       historyPage.value = Math.max(1, historyTotalPages.value);
     }
   } catch (err) {
     console.error('Failed to load history:', err);
+  } finally {
+    historyLoading.value = false;
   }
 };
 

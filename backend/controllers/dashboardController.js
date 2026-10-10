@@ -16,23 +16,27 @@ const getDashboardStats = async (req, res) => {
       WHERE deleted_at IS NULL
     `);
 
-    // 2. Transaksi & Omzet Hari Ini
+    // 2. Transaksi, Omzet & Laba Hari Ini
     const [todaySales] = await pool.execute(`
       SELECT 
-        COUNT(id) as transaksi_hari_ini,
-        COALESCE(SUM(omzet_penjualan), 0) as omzet_hari_ini
-      FROM penjualan
-      WHERE tanggal = ? AND status = 'aktif'
+        COUNT(p.id) as transaksi_hari_ini,
+        COALESCE(SUM(p.omzet_penjualan), 0) as omzet_hari_ini,
+        COALESCE(SUM(p.omzet_penjualan - (p.jumlah * COALESCE(m.harga_beli, 0))), 0) as laba_hari_ini
+      FROM penjualan p
+      LEFT JOIN master_mod m ON m.nama_mod = p.harga_modal
+      WHERE p.tanggal = ? AND p.status = 'aktif'
     `, [today]);
 
-    // 3. Omzet Bulan Ini
+    // 3. Omzet & Laba Bulan Ini
     const [monthSales] = await pool.execute(`
       SELECT 
-        COUNT(id) as transaksi_bulan_ini,
-        COALESCE(SUM(omzet_penjualan), 0) as omzet_bulan_ini,
-        COALESCE(SUM(jumlah), 0) as unit_terjual_bulan_ini
-      FROM penjualan
-      WHERE YEAR(tanggal) = ? AND MONTH(tanggal) = ? AND status = 'aktif'
+        COUNT(p.id) as transaksi_bulan_ini,
+        COALESCE(SUM(p.omzet_penjualan), 0) as omzet_bulan_ini,
+        COALESCE(SUM(p.jumlah), 0) as unit_terjual_bulan_ini,
+        COALESCE(SUM(p.omzet_penjualan - (p.jumlah * COALESCE(m.harga_beli, 0))), 0) as laba_bulan_ini
+      FROM penjualan p
+      LEFT JOIN master_mod m ON m.nama_mod = p.harga_modal
+      WHERE YEAR(p.tanggal) = ? AND MONTH(p.tanggal) = ? AND p.status = 'aktif'
     `, [currentYear, currentMonth]);
 
     // 4. Pembelian Bulan Ini
@@ -75,7 +79,9 @@ const getDashboardStats = async (req, res) => {
         total_unit_stok: barangStats[0].total_unit_stok || 0,
         transaksi_hari_ini: todaySales[0].transaksi_hari_ini || 0,
         omzet_hari_ini: parseFloat(todaySales[0].omzet_hari_ini || 0),
+        laba_hari_ini: parseFloat(todaySales[0].laba_hari_ini || 0),
         omzet_bulan_ini: parseFloat(monthSales[0].omzet_bulan_ini || 0),
+        laba_bulan_ini: parseFloat(monthSales[0].laba_bulan_ini || 0),
         unit_terjual_bulan_ini: parseInt(monthSales[0].unit_terjual_bulan_ini || 0, 10),
         pasokan_bulan_ini: parseInt(monthPurchases[0].pasokan_bulan_ini || 0, 10),
         unit_masuk_bulan_ini: parseInt(monthPurchases[0].unit_masuk_bulan_ini || 0, 10)

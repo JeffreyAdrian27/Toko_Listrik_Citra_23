@@ -6,10 +6,21 @@
           <Users :size="20" style="color: var(--color-primary);" />
           <h3 class="card-title">Kelola Akun Pegawai Toko</h3>
         </div>
-        <button @click="openCreateModal" class="btn btn-primary btn-sm">
-          <UserPlus :size="16" />
-          <span>Tambah Akun Pegawai</span>
-        </button>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button
+            @click="fetchPegawai"
+            class="btn btn-secondary btn-sm"
+            :disabled="loading"
+            style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;"
+          >
+            <RefreshCw :size="15" :class="{ 'spin-active': loading }" />
+            <span>{{ loading ? 'Memuat...' : 'Segarkan' }}</span>
+          </button>
+          <button @click="openCreateModal" class="btn btn-primary btn-sm">
+            <UserPlus :size="16" />
+            <span>Tambah Akun Pegawai</span>
+          </button>
+        </div>
       </div>
 
       <div class="card-body">
@@ -19,9 +30,12 @@
           </div>
         </div>
 
-        <div v-if="loading" style="text-align: center; padding: 30px; color: var(--text-muted);">
-          Memuat data akun pegawai...
-        </div>
+        <LoadingSpinner
+          v-if="loading"
+          text="Memuat data akun pegawai..."
+          subtext="Mengambil daftar akun admin dan staf kasir..."
+          minHeight="220px"
+        />
 
         <div v-else class="table-responsive">
           <table class="table">
@@ -196,8 +210,9 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
-import { Users, UserPlus, UserX, UserCheck, Key, X } from 'lucide-vue-next';
+import { Users, UserPlus, UserX, UserCheck, Key, X, RefreshCw } from 'lucide-vue-next';
 
 const pegawaiList = ref([]);
 const loading = ref(true);
@@ -217,8 +232,12 @@ const createForm = reactive({
 
 const fetchPegawai = async () => {
   loading.value = true;
+  const minDelay = new Promise(resolve => setTimeout(resolve, 450));
   try {
-    const res = await api.get('/pegawai');
+    const [res] = await Promise.all([
+      api.get('/pegawai'),
+      minDelay
+    ]);
     pegawaiList.value = res.data.data;
   } catch (err) {
     console.error('Failed to load pegawai:', err);

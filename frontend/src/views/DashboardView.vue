@@ -1,8 +1,27 @@
 <template>
   <AppLayout>
-    <div v-if="loading" style="text-align: center; padding: 40px; color: var(--text-muted);">
-      Memuat data ringkasan dashboard...
+    <!-- Bar Header Dashboard & Tombol Segarkan -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+      <div style="font-size: 0.85rem; color: var(--text-muted);">
+        Ringkasan performa penjualan harian, bulanan &amp; status inventaris toko
+      </div>
+      <button
+        @click="fetchDashboardStats"
+        class="btn btn-sm btn-secondary"
+        :disabled="loading"
+        style="display: inline-flex; align-items: center; gap: 7px; font-weight: 600; padding: 7px 14px;"
+      >
+        <RefreshCw :size="15" :class="{ 'spin-active': loading }" />
+        <span>{{ loading ? 'Memuat Data...' : 'Segarkan Data' }}</span>
+      </button>
     </div>
+
+    <LoadingSpinner
+      v-if="loading"
+      text="Memuat data ringkasan dashboard..."
+      subtext="Menghitung omzet harian & bulanan, estimasi laba kotor, serta inventaris..."
+      minHeight="340px"
+    />
 
     <div v-else>
       <!-- Stats Overview Grid -->
@@ -31,7 +50,7 @@
 
         <div class="stat-card">
           <div class="stat-content">
-            <div class="stat-label">Estimasi Laba Kotor</div>
+            <div class="stat-label">Estimasi Laba Kotor Bulan Ini</div>
             <div class="stat-value amount" style="color: var(--status-success);">
               Rp {{ formatNumber(stats.summary?.laba_bulan_ini || 0) }}
             </div>
@@ -188,6 +207,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
 import {
   Coins,
@@ -198,7 +218,8 @@ import {
   Truck,
   BarChart3,
   Award,
-  Clock
+  Clock,
+  RefreshCw
 } from 'lucide-vue-next';
 
 const stats = ref({});
@@ -206,8 +227,12 @@ const loading = ref(true);
 
 const fetchDashboardStats = async () => {
   loading.value = true;
+  const minDelay = new Promise(resolve => setTimeout(resolve, 450));
   try {
-    const res = await api.get('/dashboard/stats');
+    const [res] = await Promise.all([
+      api.get('/dashboard/stats'),
+      minDelay
+    ]);
     stats.value = res.data;
   } catch (err) {
     console.error('Failed to load dashboard stats:', err);

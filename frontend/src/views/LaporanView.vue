@@ -97,18 +97,26 @@
             </div>
           </template>
 
-          <button @click="fetchLaporan(true)" class="btn btn-primary" style="height: 42px;">
+          <button @click="fetchLaporan(true)" class="btn btn-primary" :disabled="loading" style="height: 42px;">
             <RefreshCw :size="16" />
-            <span>Tampilkan Laporan</span>
+            <span>{{ loading ? 'Memuat...' : 'Tampilkan Laporan' }}</span>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Ringkasan Cards Finansial (Laba Rugi Otomatis dari MOD) -->
-    <div class="stats-grid">
-      <!-- 1. Omzet Penjualan -->
-      <div class="stat-card">
+    <LoadingSpinner
+      v-if="loading"
+      text="Memuat laporan laba rugi & keuangan..."
+      subtext="Mengkalkulasi omzet, HPP MOD, dan margin laba..."
+      minHeight="320px"
+    />
+
+    <template v-else>
+      <!-- Ringkasan Cards Finansial (Laba Rugi Otomatis dari MOD) -->
+      <div class="stats-grid">
+        <!-- 1. Omzet Penjualan -->
+        <div class="stat-card">
         <div class="stat-content">
           <div class="stat-label">Total Omzet Penjualan</div>
           <div class="stat-value amount" style="color: var(--color-primary);">
@@ -277,12 +285,14 @@
         </div>
       </div>
     </div>
+    </template>
   </AppLayout>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
 import {
   BarChart3,
@@ -384,12 +394,15 @@ const displayedPages = computed(() => {
   return pages;
 });
 
+const loading = ref(true);
+
 const hasData = computed(() => {
   return Array.isArray(reportData.value.rincian_barang) && reportData.value.rincian_barang.length > 0;
 });
 
 const fetchLaporan = async (resetPage = false) => {
   if (resetPage) currentPage.value = 1;
+  loading.value = true;
   try {
     const params = {};
     if (filterMode.value === 'bulan') {
@@ -403,7 +416,11 @@ const fetchLaporan = async (resetPage = false) => {
       params.sampai_tanggal = filterEndDate.value;
     }
 
-    const res = await api.get('/laporan/laba-rugi', { params });
+    const minDelay = new Promise(resolve => setTimeout(resolve, 400));
+    const [res] = await Promise.all([
+      api.get('/laporan/laba-rugi', { params }),
+      minDelay
+    ]);
     reportData.value = res.data;
 
     // Terapkan perubahan filter ke tampilan & label periode hanya setelah data berhasil dimuat
@@ -420,6 +437,8 @@ const fetchLaporan = async (resetPage = false) => {
     }
   } catch (err) {
     console.error('fetchLaporan error:', err);
+  } finally {
+    loading.value = false;
   }
 };
 

@@ -27,9 +27,11 @@
           </div>
         </div>
 
-        <div v-if="loading" style="text-align: center; padding: 30px; color: var(--text-muted);">
-          Memuat kategori...
-        </div>
+        <LoadingSpinner
+          v-if="loading"
+          text="Memuat data kategori..."
+          minHeight="200px"
+        />
 
         <div v-else class="table-responsive">
           <table class="table">
@@ -117,6 +119,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
 import { Layers, Plus, Search, Edit2, Trash2, X } from 'lucide-vue-next';
 
@@ -132,10 +135,14 @@ const saving = ref(false);
 
 const fetchKategori = async () => {
   loading.value = true;
+  const minDelay = new Promise(resolve => setTimeout(resolve, 400));
   try {
-    const res = await api.get('/kategori', {
-      params: { search: searchQuery.value }
-    });
+    const [res] = await Promise.all([
+      api.get('/kategori', {
+        params: { search: searchQuery.value }
+      }),
+      minDelay
+    ]);
     categories.value = res.data.data;
   } catch (err) {
     console.error('Failed to load categories:', err);

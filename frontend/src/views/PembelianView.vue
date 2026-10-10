@@ -193,7 +193,13 @@
         </div>
       </div>
 
-      <div class="table-responsive">
+      <LoadingSpinner
+        v-if="historyLoading"
+        text="Memuat riwayat pembelian &amp; pasokan..."
+        minHeight="200px"
+      />
+
+      <div v-else class="table-responsive">
         <table class="table">
           <thead>
             <tr>
@@ -351,6 +357,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
 import { Truck, Search, Check, X } from 'lucide-vue-next';
 
@@ -358,6 +365,7 @@ const searchQuery = ref('');
 const searchResults = ref([]);
 const selectedItem = ref(null);
 const saving = ref(false);
+const historyLoading = ref(true);
 const successMsg = ref('');
 const errorMsg = ref('');
 
@@ -529,13 +537,20 @@ const submitPembelian = async () => {
 };
 
 const fetchHistory = async () => {
+  historyLoading.value = true;
+  const minDelay = new Promise(resolve => setTimeout(resolve, 400));
   try {
-    const res = await api.get('/pembelian', {
-      params: { bulan: filter.bulan, tahun: filter.tahun }
-    });
+    const [res] = await Promise.all([
+      api.get('/pembelian', {
+        params: { bulan: filter.bulan, tahun: filter.tahun }
+      }),
+      minDelay
+    ]);
     historyData.value = res.data;
   } catch (err) {
     console.error('Failed to load purchase history:', err);
+  } finally {
+    historyLoading.value = false;
   }
 };
 

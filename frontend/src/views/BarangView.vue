@@ -46,9 +46,12 @@
           </label>
         </div>
 
-        <div v-if="loading" style="text-align: center; padding: 30px; color: var(--text-muted);">
-          Memuat data inventaris barang...
-        </div>
+        <LoadingSpinner
+          v-if="loading"
+          text="Memuat inventaris produk..."
+          subtext="Menyinkronkan stok, kategori, dan master kode MOD..."
+          minHeight="240px"
+        />
 
         <div v-else class="table-responsive">
           <table class="table">
@@ -426,6 +429,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
 import {
   Package,
@@ -559,16 +563,20 @@ const fetchCategories = async () => {
 
 const fetchBarang = async () => {
   loading.value = true;
+  const minDelay = new Promise(resolve => setTimeout(resolve, 400));
   try {
-    const res = await api.get('/barang', {
-      params: {
-        page: pagination.page,
-        limit: pagination.limit,
-        search: filters.search,
-        kategori_id: filters.kategori_id,
-        low_stock: filters.low_stock
-      }
-    });
+    const [res] = await Promise.all([
+      api.get('/barang', {
+        params: {
+          page: pagination.page,
+          limit: pagination.limit,
+          search: filters.search,
+          kategori_id: filters.kategori_id,
+          low_stock: filters.low_stock
+        }
+      }),
+      minDelay
+    ]);
     items.value = res.data.data;
     pagination.total = res.data.pagination.total;
     pagination.totalPages = res.data.pagination.totalPages;

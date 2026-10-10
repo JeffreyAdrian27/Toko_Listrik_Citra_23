@@ -42,9 +42,12 @@
           </button>
         </div>
 
-        <div v-if="loading" style="text-align: center; padding: 30px; color: var(--text-muted);">
-          Memuat rekam jejak audit...
-        </div>
+        <LoadingSpinner
+          v-if="loading"
+          text="Memuat rekam jejak audit..."
+          subtext="Mengambil catatan aktivitas operasional & keamanan..."
+          minHeight="200px"
+        />
 
         <div v-else class="table-responsive">
           <table class="table">
@@ -100,6 +103,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
 import { ShieldCheck, Search } from 'lucide-vue-next';
 
@@ -116,7 +120,11 @@ const fetchAuditLogs = async () => {
     if (filterDate.value) params.tanggal = filterDate.value;
     if (filterAction.value.trim()) params.aksi = filterAction.value.trim();
 
-    const res = await api.get('/audit-log', { params });
+    const minDelay = new Promise(resolve => setTimeout(resolve, 400));
+    const [res] = await Promise.all([
+      api.get('/audit-log', { params }),
+      minDelay
+    ]);
     logs.value = res.data.data;
   } catch (err) {
     console.error('Failed to load audit logs:', err);

@@ -98,9 +98,12 @@
         </div>
 
         <!-- Tabel MOD (Tanpa Keterangan) -->
-        <div v-if="loading" style="text-align: center; padding: 40px; color: var(--text-muted);">
-          Memuat daftar Master MOD...
-        </div>
+        <LoadingSpinner
+          v-if="loading"
+          text="Memuat data Master MOD..."
+          subtext="Menghubungkan kode MOD dan harga beli toko..."
+          minHeight="220px"
+        />
 
         <div v-else class="table-responsive">
           <table class="table">
@@ -265,6 +268,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
 import {
   KeyRound,
@@ -279,7 +283,7 @@ import {
 } from 'lucide-vue-next';
 
 const modList = ref([]);
-const loading = ref(false);
+const loading = ref(true);
 const searchQuery = ref('');
 
 // Pagination: 10 item per halaman
@@ -304,8 +308,12 @@ const formatNumber = (num) => {
 
 const fetchMods = async () => {
   loading.value = true;
+  const minDelay = new Promise(resolve => setTimeout(resolve, 400));
   try {
-    const res = await api.get('/mod');
+    const [res] = await Promise.all([
+      api.get('/mod'),
+      minDelay
+    ]);
     modList.value = res.data || [];
   } catch (err) {
     console.error('fetchMods error:', err);
