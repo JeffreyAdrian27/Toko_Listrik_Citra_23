@@ -271,11 +271,11 @@
               class="btn btn-sm btn-secondary"
               title="Halaman Sebelumnya"
             >
-              &larr; Sebelumnya
+              Sebelumnya
             </button>
             
             <button
-              v-for="p in todayTotalPages"
+              v-for="p in displayedTodayPages"
               :key="p"
               @click="todayPage = p"
               class="btn btn-sm"
@@ -291,7 +291,7 @@
               class="btn btn-sm btn-secondary"
               title="Halaman Selanjutnya"
             >
-              Selanjutnya &rarr;
+              Selanjutnya
             </button>
           </div>
         </div>
@@ -385,11 +385,11 @@
               class="btn btn-sm btn-secondary"
               title="Halaman Sebelumnya"
             >
-              &larr; Sebelumnya
+              Sebelumnya
             </button>
             
             <button
-              v-for="p in historyTotalPages"
+              v-for="p in displayedHistoryPages"
               :key="p"
               @click="historyPage = p"
               class="btn btn-sm"
@@ -405,7 +405,7 @@
               class="btn btn-sm btn-secondary"
               title="Halaman Selanjutnya"
             >
-              Selanjutnya &rarr;
+              Selanjutnya
             </button>
           </div>
         </div>
@@ -584,6 +584,21 @@ const todayTotalPages = computed(() => {
   return Math.ceil(todayList.value.length / todayPageSize) || 1;
 });
 
+const displayedTodayPages = computed(() => {
+  const total = todayTotalPages.value || 1;
+  if (total <= 5) {
+    const pages = [];
+    for (let i = 1; i <= total; i++) pages.push(i);
+    return pages;
+  }
+  const start = Math.max(1, Math.min(todayPage.value, total - 4));
+  const pages = [];
+  for (let i = 0; i < 5; i++) {
+    pages.push(start + i);
+  }
+  return pages;
+});
+
 const monthNames = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
@@ -607,6 +622,21 @@ const paginatedHistory = computed(() => {
 
 const historyTotalPages = computed(() => {
   return Math.ceil((historyData.value.data?.length || 0) / historyPageSize) || 1;
+});
+
+const displayedHistoryPages = computed(() => {
+  const total = historyTotalPages.value || 1;
+  if (total <= 5) {
+    const pages = [];
+    for (let i = 1; i <= total; i++) pages.push(i);
+    return pages;
+  }
+  const start = Math.max(1, Math.min(historyPage.value, total - 4));
+  const pages = [];
+  for (let i = 0; i < 5; i++) {
+    pages.push(start + i);
+  }
+  return pages;
 });
 
 const onHistoryFilterChange = () => {

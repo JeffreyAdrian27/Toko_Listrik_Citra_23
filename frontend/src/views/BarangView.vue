@@ -158,10 +158,10 @@
               :disabled="pagination.page <= 1"
               class="btn btn-sm btn-secondary"
             >
-              &larr; Sebelumnya
+              Sebelumnya
             </button>
             <button
-              v-for="p in pagination.totalPages"
+              v-for="p in displayedPages"
               :key="p"
               @click="changePage(p)"
               class="btn btn-sm"
@@ -175,7 +175,7 @@
               :disabled="pagination.page >= pagination.totalPages"
               class="btn btn-sm btn-secondary"
             >
-              Selanjutnya &rarr;
+              Selanjutnya
             </button>
           </div>
         </div>
@@ -496,6 +496,21 @@ const pagination = reactive({
   limit: 10,
   total: 0,
   totalPages: 1
+});
+
+const displayedPages = computed(() => {
+  const total = pagination.totalPages || 1;
+  if (total <= 5) {
+    const pages = [];
+    for (let i = 1; i <= total; i++) pages.push(i);
+    return pages;
+  }
+  const start = Math.max(1, Math.min(pagination.page, total - 4));
+  const pages = [];
+  for (let i = 0; i < 5; i++) {
+    pages.push(start + i);
+  }
+  return pages;
 });
 
 // Modal Tambah / Edit Barang State

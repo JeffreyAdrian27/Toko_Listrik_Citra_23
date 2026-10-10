@@ -252,11 +252,11 @@
             class="btn btn-sm btn-secondary"
             title="Halaman Sebelumnya"
           >
-            &larr; Sebelumnya
+            Sebelumnya
           </button>
           
           <button
-            v-for="p in totalPages"
+            v-for="p in displayedPages"
             :key="p"
             @click="currentPage = p"
             class="btn btn-sm"
@@ -272,7 +272,7 @@
             class="btn btn-sm btn-secondary"
             title="Halaman Selanjutnya"
           >
-            Selanjutnya &rarr;
+            Selanjutnya
           </button>
         </div>
       </div>
@@ -324,14 +324,23 @@ const reportData = ref({
   rincian_barang: []
 });
 
+// Filter yang sedang aktif diterapkan pada laporan (hanya diperbarui saat klik "Tampilkan Laporan")
+const appliedPeriod = ref({
+  mode: 'bulan',
+  month: new Date().getMonth() + 1,
+  year: new Date().getFullYear(),
+  startDate: new Date().toISOString().split('T')[0],
+  endDate: new Date().toISOString().split('T')[0]
+});
+
 const activePeriodLabel = computed(() => {
-  if (filterMode.value === 'bulan') {
-    return `${monthNames[filterMonth.value - 1]} ${filterYear.value}`;
+  if (appliedPeriod.value.mode === 'bulan') {
+    return `${monthNames[appliedPeriod.value.month - 1]} ${appliedPeriod.value.year}`;
   }
-  if (filterMode.value === 'tahun') {
-    return `Tahun ${filterYear.value} (1 Tahun Penuh)`;
+  if (appliedPeriod.value.mode === 'tahun') {
+    return `Tahun ${appliedPeriod.value.year} (1 Tahun Penuh)`;
   }
-  return `${filterStartDate.value} s/d ${filterEndDate.value}`;
+  return `${appliedPeriod.value.startDate} s/d ${appliedPeriod.value.endDate}`;
 });
 
 const formatDate = (dateStr) => {
@@ -360,6 +369,21 @@ const totalPages = computed(() => {
   return Math.ceil(count / pageSize) || 1;
 });
 
+const displayedPages = computed(() => {
+  const total = totalPages.value || 1;
+  if (total <= 5) {
+    const pages = [];
+    for (let i = 1; i <= total; i++) pages.push(i);
+    return pages;
+  }
+  const start = Math.max(1, Math.min(currentPage.value, total - 4));
+  const pages = [];
+  for (let i = 0; i < 5; i++) {
+    pages.push(start + i);
+  }
+  return pages;
+});
+
 const hasData = computed(() => {
   return Array.isArray(reportData.value.rincian_barang) && reportData.value.rincian_barang.length > 0;
 });
@@ -381,6 +405,16 @@ const fetchLaporan = async (resetPage = false) => {
 
     const res = await api.get('/laporan/laba-rugi', { params });
     reportData.value = res.data;
+
+    // Terapkan perubahan filter ke tampilan & label periode hanya setelah data berhasil dimuat
+    appliedPeriod.value = {
+      mode: filterMode.value,
+      month: filterMonth.value,
+      year: filterYear.value,
+      startDate: filterStartDate.value,
+      endDate: filterEndDate.value
+    };
+
     if (currentPage.value > totalPages.value) {
       currentPage.value = Math.max(1, totalPages.value);
     }

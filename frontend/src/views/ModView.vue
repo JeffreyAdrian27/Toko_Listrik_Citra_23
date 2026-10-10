@@ -172,10 +172,10 @@
               :disabled="page <= 1"
               class="btn btn-sm btn-secondary"
             >
-              &larr; Sebelumnya
+              Sebelumnya
             </button>
             <button
-              v-for="p in totalPages"
+              v-for="p in displayedPages"
               :key="p"
               @click="page = p"
               class="btn btn-sm"
@@ -189,7 +189,7 @@
               :disabled="page >= totalPages"
               class="btn btn-sm btn-secondary"
             >
-              Selanjutnya &rarr;
+              Selanjutnya
             </button>
           </div>
         </div>
@@ -323,6 +323,21 @@ const filteredMods = computed(() => {
 
 const totalPages = computed(() => {
   return Math.ceil(filteredMods.value.length / pageSize) || 1;
+});
+
+const displayedPages = computed(() => {
+  const total = totalPages.value || 1;
+  if (total <= 5) {
+    const pages = [];
+    for (let i = 1; i <= total; i++) pages.push(i);
+    return pages;
+  }
+  const start = Math.max(1, Math.min(page.value, total - 4));
+  const pages = [];
+  for (let i = 0; i < 5; i++) {
+    pages.push(start + i);
+  }
+  return pages;
 });
 
 const paginatedMods = computed(() => {

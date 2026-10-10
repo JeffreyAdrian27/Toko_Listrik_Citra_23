@@ -262,11 +262,11 @@
             class="btn btn-sm btn-secondary"
             title="Halaman Sebelumnya"
           >
-            &larr; Sebelumnya
+            Sebelumnya
           </button>
           
           <button
-            v-for="p in historyTotalPages"
+            v-for="p in displayedHistoryPages"
             :key="p"
             @click="historyPage = p"
             class="btn btn-sm"
@@ -282,7 +282,7 @@
             class="btn btn-sm btn-secondary"
             title="Halaman Selanjutnya"
           >
-            Selanjutnya &rarr;
+            Selanjutnya
           </button>
         </div>
       </div>
@@ -401,6 +401,21 @@ const paginatedHistory = computed(() => {
 
 const historyTotalPages = computed(() => {
   return Math.ceil((historyData.value.data?.length || 0) / historyPageSize) || 1;
+});
+
+const displayedHistoryPages = computed(() => {
+  const total = historyTotalPages.value || 1;
+  if (total <= 5) {
+    const pages = [];
+    for (let i = 1; i <= total; i++) pages.push(i);
+    return pages;
+  }
+  const start = Math.max(1, Math.min(historyPage.value, total - 4));
+  const pages = [];
+  for (let i = 0; i < 5; i++) {
+    pages.push(start + i);
+  }
+  return pages;
 });
 
 const onFilterChange = () => {

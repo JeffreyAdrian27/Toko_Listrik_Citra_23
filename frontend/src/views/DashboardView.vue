@@ -62,7 +62,7 @@
 
       <!-- Quick Actions Banner -->
       <div class="card" style="margin-bottom: 24px; background: linear-gradient(135deg, #005CE6 0%, #0045B0 100%); color: #FFFFFF;">
-        <div style="padding: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: gap: 16px;">
+        <div style="padding: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
           <div>
             <h3 style="font-size: 1.15rem; font-weight: 700;">Aksi Cepat Operasional Kasir</h3>
             <p style="font-size: 0.85rem; opacity: 0.9; margin-top: 4px;">Pilih menu transaksi harian toko dengan cepat.</p>
