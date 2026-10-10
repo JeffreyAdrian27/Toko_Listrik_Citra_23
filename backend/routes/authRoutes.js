@@ -1,7 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
-const { login, getMe, logout } = require('../controllers/authController');
+const {
+  login,
+  getMe,
+  logout,
+  forgotPassword,
+  verifyResetToken,
+  resetPassword
+} = require('../controllers/authController');
 const { verifyToken } = require('../middleware/auth');
 
 // Rate limiting on login per PRD FR-AUTH-5
@@ -16,5 +23,10 @@ const loginLimiter = rateLimit({
 router.post('/login', loginLimiter, login);
 router.get('/me', verifyToken, getMe);
 router.post('/logout', verifyToken, logout);
+
+// Password Reset Endpoints
+router.post('/forgot-password', forgotPassword);
+router.get('/verify-reset-token', verifyResetToken);
+router.post('/reset-password', resetPassword);
 
 module.exports = router;

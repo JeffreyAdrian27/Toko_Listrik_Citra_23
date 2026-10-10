@@ -60,11 +60,21 @@
           </div>
         </div>
 
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 16px; margin-top: -6px;">
+          <button
+            type="button"
+            class="forgot-link-btn"
+            @click="openForgotModal"
+            tabindex="0"
+          >
+            Lupa password admin?
+          </button>
+        </div>
+
         <button type="submit" class="btn btn-primary btn-block" :disabled="loading">
           <span v-if="loading">Memeriksa kredensial...</span>
           <span v-else style="display: flex; align-items: center; justify-content: center; gap: 8px;">
             <span>Masuk ke Sistem</span>
-            <ArrowRight :size="18" />
           </span>
         </button>
       </form>
@@ -76,6 +86,68 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal Lupa Password Admin via Email (Resend) -->
+    <div v-if="showForgotModal" class="modal-backdrop" @click.self="closeForgotModal">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <Mail :size="20" style="color: #005CE6;" />
+            <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #0F172A;">Pemulihan Password Admin</h3>
+          </div>
+          <button type="button" class="close-btn" @click="closeForgotModal">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <p style="font-size: 0.85rem; color: #64748B; margin-top: 0; margin-bottom: 16px; line-height: 1.5;">
+            Masukkan alamat email admin Anda. Sistem akan mengirimkan tautan pemulihan satu kali pakai via <strong>Resend</strong> yang berlaku selama <strong>15 menit</strong>.
+          </p>
+
+          <div v-if="forgotSuccessMsg" class="success-alert">
+            <CheckCircle2 :size="18" style="flex-shrink: 0;" />
+            <span>{{ forgotSuccessMsg }}</span>
+          </div>
+
+          <div v-if="forgotErrorMsg" class="error-alert" style="margin-bottom: 16px;">
+            <AlertCircle :size="18" style="flex-shrink: 0;" />
+            <span>{{ forgotErrorMsg }}</span>
+          </div>
+
+          <form v-if="!forgotSuccessMsg" @submit.prevent="submitForgotPassword">
+            <div class="form-group" style="margin-bottom: 16px;">
+              <label class="form-label">Email Administrator</label>
+              <div class="input-with-icon">
+                <Mail :size="18" class="input-icon" />
+                <input
+                  v-model="forgotEmail"
+                  type="email"
+                  class="form-input"
+                  placeholder="Masukkan email admin terdaftar"
+                  required
+                  :disabled="forgotLoading"
+                />
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+              <button type="button" class="btn btn-secondary" @click="closeForgotModal" :disabled="forgotLoading">
+                Batal
+              </button>
+              <button type="submit" class="btn btn-primary" :disabled="forgotLoading">
+                <span v-if="forgotLoading">Mengirim email...</span>
+                <span v-else>Kirim Tautan Pemulihan</span>
+              </button>
+            </div>
+          </form>
+
+          <div v-else style="display: flex; justify-content: flex-end; margin-top: 16px;">
+            <button type="button" class="btn btn-primary" @click="closeForgotModal">
+              Tutup
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -83,7 +155,19 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
-import { Zap, User, Lock, ArrowRight, AlertCircle, ShieldCheck, Eye, EyeOff } from 'lucide-vue-next';
+import api from '../api';
+import {
+  Zap,
+  User,
+  Lock,
+  ArrowRight,
+  AlertCircle,
+  ShieldCheck,
+  Eye,
+  EyeOff,
+  Mail,
+  CheckCircle2
+} from 'lucide-vue-next';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -110,6 +194,43 @@ const submitLogin = async () => {
     }
   } else {
     errorMessage.value = res.error;
+  }
+};
+
+// State Modal Lupa Password
+const showForgotModal = ref(false);
+const forgotEmail = ref('');
+const forgotLoading = ref(false);
+const forgotSuccessMsg = ref('');
+const forgotErrorMsg = ref('');
+
+const openForgotModal = () => {
+  forgotErrorMsg.value = '';
+  forgotSuccessMsg.value = '';
+  showForgotModal.value = true;
+};
+
+const closeForgotModal = () => {
+  showForgotModal.value = false;
+  forgotErrorMsg.value = '';
+  forgotSuccessMsg.value = '';
+};
+
+const submitForgotPassword = async () => {
+  if (!forgotEmail.value) return;
+  forgotLoading.value = true;
+  forgotErrorMsg.value = '';
+  forgotSuccessMsg.value = '';
+
+  try {
+    const res = await api.post('/auth/forgot-password', {
+      email: forgotEmail.value.trim()
+    });
+    forgotSuccessMsg.value = res.data?.message || 'Tautan pemulihan berhasil dikirim ke email Anda.';
+  } catch (err) {
+    forgotErrorMsg.value = err.response?.data?.error || 'Gagal mengirim email pemulihan. Pastikan email benar atau coba lagi nanti.';
+  } finally {
+    forgotLoading.value = false;
   }
 };
 </script>
@@ -251,5 +372,93 @@ const submitLogin = async () => {
   font-size: 0.75rem;
   color: #64748B;
   font-weight: 500;
+}
+
+.forgot-link-btn {
+  background: none;
+  border: none;
+  color: #005CE6;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.15s ease;
+}
+
+.forgot-link-btn:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+/* Modal Styles */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 440px;
+  background: #FFFFFF;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15);
+  border: 1px solid #E2E8F0;
+  overflow: hidden;
+  animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalPop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #94A3B8;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.close-btn:hover {
+  color: #334155;
+}
+
+.modal-body {
+  padding: 20px 24px;
+}
+
+.success-alert {
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  color: #059669;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  line-height: 1.4;
+  margin-bottom: 16px;
 }
 </style>
