@@ -1,5 +1,18 @@
 <template>
   <AppLayout>
+    <!-- Offline Notice Banner -->
+    <div v-if="!isOnline" class="card" style="margin-bottom: 20px; border-left: 4px solid #F59E0B; background: #FFFBEB;">
+      <div style="padding: 12px 18px; display: flex; align-items: center; gap: 12px;">
+        <WifiOff :size="20" style="color: #D97706; flex-shrink: 0;" />
+        <div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: #92400E;">Mode Offline Aktif</div>
+          <div style="font-size: 0.8rem; color: #B45309;">
+            Koneksi ke server terputus. Anda tetap dapat mencari barang dan mencatat restock/pembelian. Data akan disimpan di perangkat dan otomatis disinkronkan ke server saat online.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Form Input Pembelian -->
     <div class="card overflow-visible" style="position: relative; z-index: 30;">
       <div class="card-header">
@@ -47,24 +60,24 @@
                 >
                   <X :size="16" />
                 </button>
-              </div>
 
-              <!-- Search dropdown -->
-              <div v-if="searchResults.length > 0" class="autocomplete-dropdown">
-                <div
-                  v-for="item in searchResults"
-                  :key="item.id"
-                  @mousedown.prevent="selectItem(item)"
-                  @click="selectItem(item)"
-                  class="autocomplete-item"
-                >
-                  <div style="display: flex; justify-content: space-between;">
-                    <span style="font-weight: 700; color: var(--color-primary);">{{ item.kode_barang }}</span>
-                    <span class="badge badge-blue">Stok: {{ item.stok_akhir }}</span>
-                  </div>
-                  <div style="font-weight: 600; font-size: 0.85rem; margin-top: 2px;">{{ item.nama_barang }}</div>
-                  <div style="font-size: 0.8rem; color: var(--text-muted);">
-                    MOD Sekarang: <strong style="font-family: monospace; color: var(--color-primary);">{{ item.MOD || '-' }}</strong>
+                <!-- Search dropdown berada pas di bawah input box -->
+                <div v-if="searchResults.length > 0" class="autocomplete-dropdown">
+                  <div
+                    v-for="item in searchResults"
+                    :key="item.id"
+                    @mousedown.prevent="selectItem(item)"
+                    @click="selectItem(item)"
+                    class="autocomplete-item"
+                  >
+                    <div style="display: flex; justify-content: space-between;">
+                      <span style="font-weight: 700; color: var(--color-primary);">{{ item.kode_barang }}</span>
+                      <span class="badge badge-blue">Stok: {{ item.stok_akhir }}</span>
+                    </div>
+                    <div style="font-weight: 600; font-size: 0.85rem; margin-top: 2px;">{{ item.nama_barang }}</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">
+                      MOD Sekarang: <strong style="font-family: monospace; color: var(--color-primary);">{{ item.MOD || '-' }}</strong>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -315,13 +328,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
+import { db } from '../db/clientDb';
+import { isOnline, queueOfflineAction, searchLocalBarang } from '../services/syncManager';
 import { hargaToMod, modToHarga } from '../utils/modHelper';
-import { Truck, Search, Check, X } from 'lucide-vue-next';
+import { Truck, Search, Check, X, WifiOff } from 'lucide-vue-next';
 
 const route = useRoute();
 
@@ -401,13 +416,18 @@ const searchItems = () => {
     return;
   }
   searchTimeout = setTimeout(async () => {
+    if (!isOnline.value) {
+      searchResults.value = await searchLocalBarang(searchQuery.value);
+      return;
+    }
     try {
       const res = await api.get('/barang', {
         params: { search: searchQuery.value, limit: 10 }
       });
       searchResults.value = res.data.data;
     } catch (err) {
-      console.error('Search failed:', err);
+      console.warn('Search server gagal, fallback ke database lokal:', err);
+      searchResults.value = await searchLocalBarang(searchQuery.value);
     }
   }, 250);
 };
@@ -448,6 +468,53 @@ const submitPembelian = async () => {
   successMsg.value = '';
   errorMsg.value = '';
 
+  // 1. JIKA OFFLINE: Simpan ke Client DB & antrean sinkronisasi
+  if (!isOnline.value) {
+    try {
+      const payload = {
+        barang_id: selectedItem.value.id,
+        harga_beli: form.harga_beli,
+        harga_baru_modal_satuan: generatedMod.value,
+        jumlah_masuk: form.jumlah_masuk,
+        tanggal: form.tanggal
+      };
+
+      await queueOfflineAction(
+        '/pembelian',
+        'POST',
+        payload,
+        `Pembelian [${selectedItem.value.nama_barang}] +${form.jumlah_masuk} unit`
+      );
+
+      // Tambahkan stok lokal di IndexedDB secara langsung
+      const localItem = await db.barang.get(selectedItem.value.id);
+      let newStok = (selectedItem.value.stok_akhir || 0) + form.jumlah_masuk;
+      if (localItem) {
+        newStok = (localItem.stok_akhir || 0) + form.jumlah_masuk;
+        await db.barang.update(localItem.id, {
+          stok_akhir: newStok,
+          modal_harga_beli: form.harga_beli,
+          MOD: generatedMod.value
+        });
+      }
+
+      successMsg.value = `[MODE OFFLINE] Pembelian [${selectedItem.value.nama_barang}] +${form.jumlah_masuk} unit berhasil dicatat di perangkat! Sisa stok lokal: ${newStok} unit, MOD baru: "${generatedMod.value}". Data akan disinkronkan ke server saat online.`;
+
+      // Reset form
+      searchQuery.value = '';
+      selectedItem.value = null;
+      form.harga_beli = 0;
+      form.jumlah_masuk = 10;
+    } catch (err) {
+      console.error('Offline restock recording failed:', err);
+      errorMsg.value = 'Gagal menyimpan transaksi pembelian ke database lokal perangkat.';
+    } finally {
+      saving.value = false;
+    }
+    return;
+  }
+
+  // 2. JIKA ONLINE: Kirim langsung ke Server API
   try {
     const res = await api.post('/pembelian', {
       barang_id: selectedItem.value.id,
@@ -458,6 +525,18 @@ const submitPembelian = async () => {
     });
 
     successMsg.value = `Pembelian berhasil dicatat! Stok [${selectedItem.value.nama_barang}] bertambah ${form.jumlah_masuk} unit (Sisa: ${res.data.data.stok_akhir} unit). MOD otomatis dibuat menjadi "${generatedMod.value}".`;
+
+    // Perbarui stok & MOD di client DB jika ada
+    try {
+      const localItem = await db.barang.get(selectedItem.value.id);
+      if (localItem) {
+        await db.barang.update(localItem.id, {
+          stok_akhir: res.data.data.stok_akhir,
+          modal_harga_beli: form.harga_beli,
+          MOD: generatedMod.value
+        });
+      }
+    } catch (e) {}
 
     // Reset form
     searchQuery.value = '';
@@ -512,9 +591,18 @@ const checkQueryParam = async () => {
   }
 };
 
+const handleSyncComplete = () => {
+  fetchHistory();
+};
+
 onMounted(() => {
   fetchHistory();
   checkQueryParam();
+  window.addEventListener('sync-complete', handleSyncComplete);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('sync-complete', handleSyncComplete);
 });
 </script>
 
@@ -528,10 +616,10 @@ onMounted(() => {
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15), 0 4px 10px rgba(0, 0, 0, 0.08);
-  max-height: 320px;
+  max-height: 280px;
   overflow-y: auto;
   z-index: 1000;
-  margin-top: 6px;
+  margin-top: 3px;
   padding-bottom: 4px;
 }
 

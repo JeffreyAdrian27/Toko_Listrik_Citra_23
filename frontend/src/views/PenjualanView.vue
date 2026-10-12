@@ -13,6 +13,19 @@
       </div>
     </div>
 
+    <!-- Offline Notice Banner -->
+    <div v-if="!isOnline" class="card" style="margin-bottom: 20px; border-left: 4px solid #F59E0B; background: #FFFBEB;">
+      <div style="padding: 12px 18px; display: flex; align-items: center; gap: 12px;">
+        <WifiOff :size="20" style="color: #D97706; flex-shrink: 0;" />
+        <div>
+          <div style="font-weight: 700; font-size: 0.9rem; color: #92400E;">Mode Offline Aktif</div>
+          <div style="font-size: 0.8rem; color: #B45309;">
+            Koneksi ke server terputus. Anda tetap dapat mencari barang dan menginput penjualan. Data tersimpan di memori perangkat dan otomatis disinkronkan ke server saat online kembali.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 1. Form Input Penjualan Baru -->
     <div class="card overflow-visible" style="border: 2px solid var(--color-primary-border); position: relative; z-index: 30;">
       <div class="card-header" style="background: var(--color-primary-light);">
@@ -36,7 +49,7 @@
             <!-- Autocomplete Pencarian Barang -->
             <div class="form-group" style="position: relative;">
               <label class="form-label">Cari & Pilih Barang Listrik</label>
-              <div class="search-input-box">
+              <div class="search-input-box" style="position: relative;">
                 <Search :size="16" class="icon" />
                 <input
                   v-model="productSearch"
@@ -46,27 +59,27 @@
                   placeholder="Ketik nama atau kode barang..."
                   autocomplete="off"
                 />
-              </div>
 
-              <!-- Dropdown Search Results -->
-              <div v-if="searchResults.length > 0" class="autocomplete-dropdown">
-                <div
-                  v-for="item in searchResults"
-                  :key="item.id"
-                  @click="selectItem(item)"
-                  class="autocomplete-item"
-                >
-                  <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-weight: 700; color: var(--color-primary); font-size: 0.85rem;">
-                      {{ item.kode_barang }}
-                    </span>
-                    <span class="badge" :class="item.stok_akhir > 5 ? 'badge-success' : 'badge-danger'">
-                      Stok: {{ item.stok_akhir }}
-                    </span>
-                  </div>
-                  <div style="font-size: 0.85rem; font-weight: 600; margin-top: 2px;">{{ item.nama_barang }}</div>
-                  <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
-                    Harga: <strong>Rp {{ formatNumber(item.harga_jual) }}</strong>
+                <!-- Dropdown Search Results -->
+                <div v-if="searchResults.length > 0" class="autocomplete-dropdown">
+                  <div
+                    v-for="item in searchResults"
+                    :key="item.id"
+                    @click="selectItem(item)"
+                    class="autocomplete-item"
+                  >
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                      <span style="font-weight: 700; color: var(--color-primary); font-size: 0.85rem;">
+                        {{ item.kode_barang }}
+                      </span>
+                      <span class="badge" :class="item.stok_akhir > 5 ? 'badge-success' : 'badge-danger'">
+                        Stok: {{ item.stok_akhir }}
+                      </span>
+                    </div>
+                    <div style="font-size: 0.85rem; font-weight: 600; margin-top: 2px;">{{ item.nama_barang }}</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
+                      Harga: <strong>Rp {{ formatNumber(item.harga_jual) }}</strong>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -236,7 +249,10 @@
                   <span style="font-size: 0.8rem; font-weight: 600;">{{ tx.kasir_nama }}</span>
                 </td>
                 <td>
-                  <span class="badge" :class="tx.status === 'aktif' ? 'badge-success' : 'badge-danger'">
+                  <span v-if="tx.is_offline" class="badge" style="background: #FEF3C7; color: #92400E; border: 1px solid #F59E0B;">
+                    Offline (Antre Sinkron)
+                  </span>
+                  <span v-else class="badge" :class="tx.status === 'aktif' ? 'badge-success' : 'badge-danger'">
                     {{ tx.status === 'aktif' ? 'Aktif' : 'Batal' }}
                   </span>
                   <div v-if="tx.status === 'batal'" style="font-size: 0.75rem; color: var(--status-danger); margin-top: 2px;">
@@ -526,11 +542,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import { useAuthStore } from '../stores/auth';
 import api from '../api';
+import { db } from '../db/clientDb';
+import { isOnline, queueOfflineAction, searchLocalBarang } from '../services/syncManager';
 import {
   ShoppingCart,
   Search,
@@ -541,7 +559,8 @@ import {
   ShieldCheck,
   Ban,
   AlertTriangle,
-  X
+  X,
+  WifiOff
 } from 'lucide-vue-next';
 
 // Chart.js registration
@@ -687,13 +706,19 @@ const searchItems = () => {
     return;
   }
   lookupTimeout = setTimeout(async () => {
+    if (!isOnline.value) {
+      // Pencarian offline dari database lokal Dexie
+      searchResults.value = await searchLocalBarang(productSearch.value);
+      return;
+    }
     try {
       const res = await api.get('/barang/lookup', {
         params: { search: productSearch.value }
       });
       searchResults.value = res.data.data;
     } catch (err) {
-      console.error('Lookup failed:', err);
+      console.warn('Pencarian server gagal, fallback ke database lokal:', err);
+      searchResults.value = await searchLocalBarang(productSearch.value);
     }
   }, 250);
 };
@@ -711,6 +736,69 @@ const submitSale = async () => {
   successMsg.value = '';
   errorMsg.value = '';
 
+  // 1. JIKA OFFLINE: Simpan langsung ke Client DB & antrean sinkronisasi
+  if (!isOnline.value) {
+    try {
+      const payload = {
+        barang_id: selectedItem.value.id,
+        jumlah: saleQty.value,
+        tanggal: saleDate.value
+      };
+
+      // Tambahkan ke antrean sinkronisasi
+      await queueOfflineAction(
+        '/penjualan',
+        'POST',
+        payload,
+        `Penjualan [${selectedItem.value.nama_barang}] x${saleQty.value}`
+      );
+
+      // Kurangi stok lokal di IndexedDB secara langsung agar kalkulasi stok offline akurat
+      const localItem = await db.barang.get(selectedItem.value.id);
+      let newStok = Math.max(0, (selectedItem.value.stok_akhir || 0) - saleQty.value);
+      if (localItem) {
+        newStok = Math.max(0, (localItem.stok_akhir || 0) - saleQty.value);
+        await db.barang.update(localItem.id, { stok_akhir: newStok });
+      }
+
+      // Catat ke daftar offline sales di IndexedDB
+      const offlineTx = {
+        id: 'offline_' + Date.now(),
+        client_tx_id: 'ctx_' + Date.now(),
+        barang_id: selectedItem.value.id,
+        kode_barang: selectedItem.value.kode_barang,
+        nama_barang: selectedItem.value.nama_barang,
+        jumlah: saleQty.value,
+        harga_jual: selectedItem.value.harga_jual || 0,
+        omzet_penjualan: (selectedItem.value.harga_jual || 0) * saleQty.value,
+        kasir_nama: auth.user?.nama || 'Kasir',
+        tanggal: saleDate.value,
+        status: 'aktif',
+        created_at: new Date().toISOString(),
+        is_offline: true
+      };
+      await db.offline_sales.add(offlineTx);
+
+      // Masukkan ke tampilan tabel hari ini
+      todayList.value.unshift(offlineTx);
+      todayTotalOmzet.value += offlineTx.omzet_penjualan;
+
+      successMsg.value = `[MODE OFFLINE] Transaksi [${selectedItem.value.nama_barang}] sejumlah ${saleQty.value} unit berhasil dicatat di perangkat! Sisa stok lokal: ${newStok} unit. Data akan otomatis disinkronkan ke server saat online.`;
+
+      // Reset form input
+      productSearch.value = '';
+      selectedItem.value = null;
+      saleQty.value = 1;
+    } catch (err) {
+      console.error('Offline sale recording failed:', err);
+      errorMsg.value = 'Gagal menyimpan transaksi ke database lokal perangkat.';
+    } finally {
+      submitting.value = false;
+    }
+    return;
+  }
+
+  // 2. JIKA ONLINE: Kirim langsung ke Server API
   try {
     const res = await api.post('/penjualan', {
       barang_id: selectedItem.value.id,
@@ -720,6 +808,14 @@ const submitSale = async () => {
 
     successMsg.value = `Berhasil! Transaksi [${selectedItem.value.nama_barang}] sejumlah ${saleQty.value} unit tercatat. Sisa stok: ${res.data.data.sisa_stok} unit.`;
     
+    // Perbarui stok di database lokal juga jika ada
+    try {
+      const localItem = await db.barang.get(selectedItem.value.id);
+      if (localItem) {
+        await db.barang.update(localItem.id, { stok_akhir: res.data.data.sisa_stok });
+      }
+    } catch (e) {}
+
     // Reset form
     productSearch.value = '';
     selectedItem.value = null;
@@ -742,18 +838,44 @@ const submitSale = async () => {
 const fetchTodaySales = async () => {
   todayLoading.value = true;
   const minDelay = new Promise(resolve => setTimeout(resolve, 400));
+  
+  // Jika offline, baca dari offline_sales lokal
+  if (!isOnline.value) {
+    try {
+      const offlineList = await db.offline_sales.toArray();
+      todayList.value = (offlineList || []).reverse();
+      todayTotalOmzet.value = (offlineList || []).reduce((acc, curr) => acc + (curr.omzet_penjualan || 0), 0);
+    } catch (e) {
+      console.error('Failed to load local offline sales:', e);
+    } finally {
+      todayLoading.value = false;
+    }
+    return;
+  }
+
   try {
     const [res] = await Promise.all([
       api.get('/penjualan/hari-ini'),
       minDelay
     ]);
-    todayList.value = res.data.data;
-    todayTotalOmzet.value = res.data.total_omzet;
+    
+    // Gabungkan dengan transaksi offline yang masih tersimpan di lokal (jika ada)
+    const offlineList = await db.offline_sales.toArray();
+    const serverSales = res.data.data || [];
+    const combined = [...(offlineList || []).filter(o => !serverSales.some(s => s.id === o.id)), ...serverSales];
+
+    todayList.value = combined;
+    todayTotalOmzet.value = (res.data.total_omzet || 0) + (offlineList || []).reduce((acc, curr) => acc + (curr.omzet_penjualan || 0), 0);
     if (todayPage.value > todayTotalPages.value) {
       todayPage.value = Math.max(1, todayTotalPages.value);
     }
   } catch (err) {
-    console.error('Failed to load today sales:', err);
+    console.warn('Gagal memuat penjualan hari ini dari server, membaca dari lokal:', err);
+    try {
+      const offlineList = await db.offline_sales.toArray();
+      todayList.value = (offlineList || []).reverse();
+      todayTotalOmzet.value = (offlineList || []).reduce((acc, curr) => acc + (curr.omzet_penjualan || 0), 0);
+    } catch (e) {}
   } finally {
     todayLoading.value = false;
   }
@@ -883,12 +1005,25 @@ const formatTime = (timeStr) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
+const handleSyncComplete = () => {
+  fetchTodaySales();
+  if (auth.isAdmin) {
+    fetchHistory();
+    fetchStats();
+  }
+};
+
 onMounted(() => {
   fetchTodaySales();
   if (auth.isAdmin) {
     fetchHistory();
     fetchStats();
   }
+  window.addEventListener('sync-complete', handleSyncComplete);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('sync-complete', handleSyncComplete);
 });
 </script>
 
@@ -902,10 +1037,10 @@ onMounted(() => {
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15), 0 4px 10px rgba(0, 0, 0, 0.08);
-  max-height: 320px;
+  max-height: 280px;
   overflow-y: auto;
   z-index: 1000;
-  margin-top: 6px;
+  margin-top: 3px;
   padding-bottom: 4px;
 }
 

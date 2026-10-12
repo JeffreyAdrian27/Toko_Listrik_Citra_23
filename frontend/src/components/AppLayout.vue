@@ -143,8 +143,46 @@
           </div>
         </div>
 
-        <!-- Bagian Kanan: Lonceng Notifikasi & Badge Toko -->
-        <div class="navbar-right">
+        <!-- Bagian Kanan: Status Sinkronisasi, Lonceng Notifikasi & Badge Toko -->
+        <div class="navbar-right" style="display: flex; align-items: center; gap: 12px;">
+          <!-- Indikator Jaringan & Status Auto-Sync Offline -->
+          <div style="display: flex; align-items: center;">
+            <!-- Mode Online & Tersinkron -->
+            <button
+              v-if="isOnline && pendingCount === 0"
+              @click="handleManualCatalogRefresh"
+              class="badge badge-success"
+              style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-weight: 700; font-size: 0.78rem; border: none; cursor: pointer;"
+              title="Terhubung ke Server MySQL. Klik untuk memperbarui salinan data lokal."
+            >
+              <Wifi :size="14" />
+              <span class="desktop-sync-text">Online</span>
+            </button>
+
+            <!-- Ada Antrean Offline / Sedang Sinkronisasi -->
+            <button
+              v-else-if="isOnline && pendingCount > 0"
+              @click="handleManualSync"
+              class="btn btn-sm btn-primary"
+              style="display: flex; align-items: center; gap: 6px; padding: 5px 12px; font-weight: 700; font-size: 0.78rem; border-radius: 20px;"
+              :title="`Ada ${pendingCount} transaksi offline menunggu sinkronisasi. Klik untuk sinkronkan sekarang!`"
+            >
+              <RefreshCw :size="13" :class="{ 'spin-icon': isSyncing }" />
+              <span>{{ isSyncing ? 'Menyinkronkan...' : `${pendingCount} Antrean Sync` }}</span>
+            </button>
+
+            <!-- Mode Offline Aktif -->
+            <div
+              v-else
+              class="badge badge-warning"
+              style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-weight: 700; font-size: 0.78rem; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D;"
+              :title="pendingCount > 0 ? `Mode Offline: ${pendingCount} data tersimpan di perangkat dan akan otomatis dikirim saat online.` : 'Mode Offline: Internet terputus. Data disimpan di perangkat.'"
+            >
+              <WifiOff :size="14" style="color: #D97706;" />
+              <span>Offline {{ pendingCount > 0 ? `(${pendingCount})` : '' }}</span>
+            </div>
+          </div>
+
           <!-- Ikon Lonceng Notifikasi Log Aktivitas -->
           <div style="position: relative;">
             <button
@@ -240,6 +278,14 @@ import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import api from '../api';
 import {
+  isOnline,
+  isSyncing,
+  pendingCount,
+  processSyncQueue,
+  mirrorCatalogFromServer,
+  syncStatusMessage
+} from '../services/syncManager';
+import {
   Zap,
   LayoutDashboard,
   Layers,
@@ -252,7 +298,10 @@ import {
   LogOut,
   Menu,
   X,
-  Bell
+  Bell,
+  Wifi,
+  WifiOff,
+  RefreshCw
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -361,6 +410,17 @@ const handleLogout = async () => {
   if (confirm('Apakah Anda yakin ingin keluar dari sistem?')) {
     await auth.logout();
     router.push('/login');
+  }
+};
+
+const handleManualSync = async () => {
+  await processSyncQueue();
+};
+
+const handleManualCatalogRefresh = async () => {
+  const ok = await mirrorCatalogFromServer();
+  if (ok) {
+    alert('Katalog lokal berhasil disinkronkan dari database server!');
   }
 };
 
@@ -653,5 +713,13 @@ onUnmounted(() => {
     width: 280px;
     right: -15px;
   }
+}
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>

@@ -344,11 +344,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
+import { db } from '../db/clientDb';
+import { isOnline, queueOfflineAction } from '../services/syncManager';
 import { hargaToMod, modToHarga } from '../utils/modHelper';
 import {
   Package,
@@ -445,17 +447,53 @@ const onFilterChange = () => {
 };
 
 const fetchCategories = async () => {
+  if (!isOnline.value) {
+    try {
+      categories.value = await db.kategori.toArray();
+    } catch (e) {}
+    return;
+  }
   try {
     const res = await api.get('/kategori');
     categories.value = res.data.data;
   } catch (err) {
-    console.error('Failed to load categories:', err);
+    console.warn('Failed to load categories from server, fallback to local:', err);
+    try {
+      categories.value = await db.kategori.toArray();
+    } catch (e) {}
   }
 };
 
 const fetchBarang = async () => {
   loading.value = true;
   const minDelay = new Promise(resolve => setTimeout(resolve, 400));
+
+  if (!isOnline.value) {
+    try {
+      const allLocal = await db.barang.toArray();
+      let filtered = allLocal;
+      if (filters.search) {
+        const q = filters.search.toLowerCase();
+        filtered = filtered.filter(b => (b.nama_barang || '').toLowerCase().includes(q) || (b.kode_barang || '').toLowerCase().includes(q));
+      }
+      if (filters.kategori_id) {
+        filtered = filtered.filter(b => String(b.kategori_id) === String(filters.kategori_id));
+      }
+      if (filters.low_stock) {
+        filtered = filtered.filter(b => (b.stok_akhir || 0) <= 5);
+      }
+      pagination.total = filtered.length;
+      pagination.totalPages = Math.ceil(filtered.length / pagination.limit) || 1;
+      const start = (pagination.page - 1) * pagination.limit;
+      items.value = filtered.slice(start, start + pagination.limit);
+    } catch (localErr) {
+      console.error('Dexie read failed:', localErr);
+    } finally {
+      loading.value = false;
+    }
+    return;
+  }
+
   try {
     const [res] = await Promise.all([
       api.get('/barang', {
@@ -480,7 +518,27 @@ const fetchBarang = async () => {
       return;
     }
   } catch (err) {
-    console.error('Failed to load items:', err);
+    console.warn('Gagal memuat barang dari server, fallback ke database lokal:', err);
+    try {
+      const allLocal = await db.barang.toArray();
+      let filtered = allLocal;
+      if (filters.search) {
+        const q = filters.search.toLowerCase();
+        filtered = filtered.filter(b => (b.nama_barang || '').toLowerCase().includes(q) || (b.kode_barang || '').toLowerCase().includes(q));
+      }
+      if (filters.kategori_id) {
+        filtered = filtered.filter(b => String(b.kategori_id) === String(filters.kategori_id));
+      }
+      if (filters.low_stock) {
+        filtered = filtered.filter(b => (b.stok_akhir || 0) <= 5);
+      }
+      pagination.total = filtered.length;
+      pagination.totalPages = Math.ceil(filtered.length / pagination.limit) || 1;
+      const start = (pagination.page - 1) * pagination.limit;
+      items.value = filtered.slice(start, start + pagination.limit);
+    } catch (localErr) {
+      console.error('Dexie read failed:', localErr);
+    }
   } finally {
     loading.value = false;
   }
@@ -525,6 +583,61 @@ const closeItemModal = () => {
 const saveBarang = async () => {
   itemSaving.value = true;
   itemModalError.value = '';
+
+  const saveOffline = async () => {
+    if (editingId.value) {
+      await db.barang.update(editingId.value, {
+        nama_barang: itemForm.nama_barang,
+        kategori_id: itemForm.kategori_id,
+        merk: itemForm.merk,
+        harga_jual: itemForm.harga_jual,
+        keterangan: itemForm.keterangan
+      });
+      await queueOfflineAction(
+        `/barang/${editingId.value}`,
+        'PUT',
+        { ...itemForm },
+        `Ubah Barang: ${itemForm.nama_barang}`
+      );
+    } else {
+      const tempId = 'offline_b_' + Date.now();
+      const newKode = 'OFF-' + (itemForm.merk ? itemForm.merk.substring(0, 3).toUpperCase() : 'BRG') + '-' + Math.floor(100 + Math.random() * 900);
+      await db.barang.add({
+        id: tempId,
+        kode_barang: newKode,
+        nama_barang: itemForm.nama_barang,
+        kategori_id: itemForm.kategori_id,
+        merk: itemForm.merk,
+        stok_akhir: Number(itemForm.stok_awal) || 0,
+        modal_harga_beli: itemForm.harga_beli,
+        MOD: itemForm.MOD,
+        harga_jual: itemForm.harga_jual,
+        keterangan: itemForm.keterangan,
+        is_offline: true
+      });
+      await queueOfflineAction(
+        '/barang',
+        'POST',
+        { ...itemForm },
+        `Tambah Barang: ${itemForm.nama_barang}`
+      );
+    }
+    closeItemModal();
+    await fetchBarang();
+  };
+
+  if (!isOnline.value) {
+    try {
+      await saveOffline();
+    } catch (e) {
+      console.error('Offline save barang failed:', e);
+      itemModalError.value = 'Gagal menyimpan barang ke database lokal perangkat.';
+    } finally {
+      itemSaving.value = false;
+    }
+    return;
+  }
+
   try {
     if (editingId.value) {
       await api.put(`/barang/${editingId.value}`, itemForm);
@@ -534,6 +647,13 @@ const saveBarang = async () => {
     closeItemModal();
     fetchBarang();
   } catch (err) {
+    if (!err.response) {
+      console.warn('Jaringan terputus saat simpan barang, beralih ke offline...');
+      try {
+        await saveOffline();
+        return;
+      } catch (e) {}
+    }
     itemModalError.value = err.response?.data?.error || 'Gagal menyimpan barang.';
   } finally {
     itemSaving.value = false;
@@ -549,10 +669,37 @@ const goToPembelian = (item) => {
 
 const confirmDelete = async (item) => {
   if (confirm(`Apakah Anda yakin ingin menghapus atau mengarsipkan barang [${item.kode_barang}] ${item.nama_barang}?`)) {
+    if (!isOnline.value) {
+      try {
+        await db.barang.delete(item.id);
+        await queueOfflineAction(
+          `/barang/${item.id}`,
+          'DELETE',
+          {},
+          `Hapus Barang: [${item.kode_barang}] ${item.nama_barang}`
+        );
+        fetchBarang();
+      } catch (e) {
+        alert('Gagal menghapus barang di mode offline.');
+      }
+      return;
+    }
+
     try {
       await api.delete(`/barang/${item.id}`);
       fetchBarang();
     } catch (err) {
+      if (!err.response) {
+        await db.barang.delete(item.id);
+        await queueOfflineAction(
+          `/barang/${item.id}`,
+          'DELETE',
+          {},
+          `Hapus Barang: [${item.kode_barang}] ${item.nama_barang}`
+        );
+        fetchBarang();
+        return;
+      }
       alert(err.response?.data?.error || 'Gagal menghapus barang.');
     }
   }
@@ -562,8 +709,20 @@ const formatNumber = (num) => {
   return Number(num || 0).toLocaleString('id-ID');
 };
 
+const handleCatalogUpdated = () => {
+  fetchCategories();
+  fetchBarang();
+};
+
 onMounted(() => {
   fetchCategories();
   fetchBarang();
+  window.addEventListener('catalog-mirrored', handleCatalogUpdated);
+  window.addEventListener('sync-complete', handleCatalogUpdated);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('catalog-mirrored', handleCatalogUpdated);
+  window.removeEventListener('sync-complete', handleCatalogUpdated);
 });
 </script>

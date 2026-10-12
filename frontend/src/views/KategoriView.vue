@@ -48,6 +48,9 @@
                 <td>{{ idx + 1 }}</td>
                 <td style="font-weight: 600;">
                   {{ cat.nama_kategori }}
+                  <span v-if="cat.is_offline" class="badge" style="background: #FEF3C7; color: #92400E; font-size: 0.7rem; margin-left: 6px; border: 1px solid #FCD34D;">
+                    Offline
+                  </span>
                 </td>
                 <td style="text-align: center;">
                   <span class="badge" :class="cat.total_barang > 0 ? 'badge-blue' : 'badge-warning'">
@@ -117,10 +120,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
+import { db } from '../db/clientDb';
+import { isOnline, queueOfflineAction } from '../services/syncManager';
 import { Layers, Plus, Search, Edit2, Trash2, X } from 'lucide-vue-next';
 
 const categories = ref([]);
@@ -135,7 +140,29 @@ const saving = ref(false);
 
 const fetchKategori = async () => {
   loading.value = true;
-  const minDelay = new Promise(resolve => setTimeout(resolve, 400));
+  const minDelay = new Promise(resolve => setTimeout(resolve, 300));
+
+  const loadOffline = async () => {
+    try {
+      const all = await db.kategori.toArray();
+      let filtered = all;
+      if (searchQuery.value) {
+        const q = searchQuery.value.toLowerCase();
+        filtered = filtered.filter(c => (c.nama_kategori || '').toLowerCase().includes(q));
+      }
+      categories.value = filtered;
+    } catch (e) {
+      console.error('Dexie read failed:', e);
+    } finally {
+      loading.value = false;
+    }
+  };
+
+  if (!isOnline.value) {
+    await loadOffline();
+    return;
+  }
+
   try {
     const [res] = await Promise.all([
       api.get('/kategori', {
@@ -145,7 +172,8 @@ const fetchKategori = async () => {
     ]);
     categories.value = res.data.data;
   } catch (err) {
-    console.error('Failed to load categories:', err);
+    console.warn('Gagal memuat kategori dari server, membaca dari database lokal:', err);
+    await loadOffline();
   } finally {
     loading.value = false;
   }
@@ -174,19 +202,67 @@ const saveKategori = async () => {
   saving.value = true;
   modalError.value = '';
 
+  const catName = formNama.value.trim();
+  const payload = { nama_kategori: catName };
+
+  // Fungsi simpan lokal (Offline)
+  const saveOffline = async () => {
+    if (editingId.value) {
+      await db.kategori.update(editingId.value, { nama_kategori: catName });
+      await queueOfflineAction(
+        `/kategori/${editingId.value}`,
+        'PUT',
+        payload,
+        `Ubah Kategori: ${catName}`
+      );
+    } else {
+      const tempId = 'offline_cat_' + Date.now();
+      await db.kategori.add({
+        id: tempId,
+        nama_kategori: catName,
+        total_barang: 0,
+        is_offline: true
+      });
+      await queueOfflineAction(
+        '/kategori',
+        'POST',
+        payload,
+        `Tambah Kategori: ${catName}`
+      );
+    }
+    closeModal();
+    await fetchKategori();
+  };
+
+  if (!isOnline.value) {
+    try {
+      await saveOffline();
+    } catch (e) {
+      console.error('Save offline failed:', e);
+      modalError.value = 'Gagal menyimpan kategori ke database lokal perangkat.';
+    } finally {
+      saving.value = false;
+    }
+    return;
+  }
+
   try {
     if (editingId.value) {
-      await api.put(`/kategori/${editingId.value}`, {
-        nama_kategori: formNama.value.trim()
-      });
+      await api.put(`/kategori/${editingId.value}`, payload);
     } else {
-      await api.post('/kategori', {
-        nama_kategori: formNama.value.trim()
-      });
+      await api.post('/kategori', payload);
     }
     closeModal();
     fetchKategori();
   } catch (err) {
+    // Jika ternyata gagal karena jaringan terputus (Network Error)
+    if (!err.response) {
+      console.warn('Jaringan terputus saat simpan kategori, menyimpan ke mode offline...');
+      try {
+        await saveOffline();
+        return;
+      } catch (e) {}
+    }
     modalError.value = err.response?.data?.error || 'Gagal menyimpan kategori.';
   } finally {
     saving.value = false;
@@ -200,16 +276,45 @@ const confirmDelete = async (cat) => {
   }
 
   if (confirm(`Apakah Anda yakin ingin menghapus kategori "${cat.nama_kategori}"?`)) {
+    if (!isOnline.value) {
+      try {
+        await db.kategori.delete(cat.id);
+        await queueOfflineAction(`/kategori/${cat.id}`, 'DELETE', {}, `Hapus Kategori: ${cat.nama_kategori}`);
+        fetchKategori();
+      } catch (e) {
+        alert('Gagal menghapus kategori di mode offline.');
+      }
+      return;
+    }
+
     try {
       await api.delete(`/kategori/${cat.id}`);
       fetchKategori();
     } catch (err) {
+      if (!err.response) {
+        // Fallback offline delete
+        await db.kategori.delete(cat.id);
+        await queueOfflineAction(`/kategori/${cat.id}`, 'DELETE', {}, `Hapus Kategori: ${cat.nama_kategori}`);
+        fetchKategori();
+        return;
+      }
       alert(err.response?.data?.error || 'Gagal menghapus kategori.');
     }
   }
 };
 
+const handleSyncComplete = () => {
+  fetchKategori();
+};
+
 onMounted(() => {
   fetchKategori();
+  window.addEventListener('catalog-mirrored', handleSyncComplete);
+  window.addEventListener('sync-complete', handleSyncComplete);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('catalog-mirrored', handleSyncComplete);
+  window.removeEventListener('sync-complete', handleSyncComplete);
 });
 </script>
