@@ -39,9 +39,7 @@ const routes = [
   },
   {
     path: '/mod',
-    name: 'MasterMod',
-    component: ModView,
-    meta: { requiresAuth: true, role: 'admin' }
+    redirect: '/pembelian'
   },
   {
     path: '/barang',

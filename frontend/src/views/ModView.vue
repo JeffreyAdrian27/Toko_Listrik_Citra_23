@@ -73,10 +73,44 @@
           </div>
         </div>
 
-        <!-- Info Box PRD -->
-        <div class="card" style="background: #F8FAFC; border-left: 4px solid var(--color-primary); margin-bottom: 20px;">
-          <div style="padding: 12px 16px; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-            <strong>Petunjuk Master MOD:</strong> Hanya memuat <strong>Nama/Kode MOD</strong> dan <strong>Harga Beli Asli</strong>. Kode yang didaftarkan di sini akan muncul sebagai opsi pilihan di menu Pembelian dan Barang untuk otomatisasi perhitungan Laba Rugi.
+        <!-- Rumus Sandi MOD Toko Citra 23 -->
+        <div class="card" style="background: #F8FAFC; border: 1px solid var(--border-medium); margin-bottom: 24px; padding: 18px 20px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
+              <KeyRound :size="18" style="color: var(--color-primary);" />
+              <span>Kamus Sandi &amp; Rumus Kode MOD Toko Citra 23</span>
+            </div>
+            <span style="font-size: 0.75rem; color: var(--color-primary); font-weight: 700; background: #EEF2FF; padding: 4px 12px; border-radius: 999px; border: 1px solid #C7D2FE;">
+              ✨ Auto-Generate Sesuai Rumus
+            </span>
+          </div>
+
+          <!-- 10 Kartu Sandi (C D L S T X A F Z B) -->
+          <div style="display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; margin-bottom: 14px;">
+            <div
+              v-for="item in MOD_CIPHER_TABLE"
+              :key="item.kode"
+              style="background: #FFFFFF; border: 1px solid var(--border-medium); border-radius: 8px; padding: 8px 4px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,0.03);"
+            >
+              <div style="font-family: monospace; font-weight: 800; font-size: 1.15rem; color: var(--color-primary); line-height: 1.1;">{{ item.kode }}</div>
+              <div style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); margin-top: 4px;">{{ item.nilai }}</div>
+            </div>
+          </div>
+
+          <div style="font-size: 0.825rem; color: var(--text-muted); line-height: 1.6; background: #FFFFFF; padding: 12px 16px; border-radius: 8px; border: 1px dashed var(--border-medium);">
+            <div style="font-weight: 700; color: var(--text-main); margin-bottom: 4px;">Ketentuan Penghilangan Nol Belakang:</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div>
+                &bull; <strong>Kelipatan 1.000:</strong> Buang 3 angka nol (<code>000</code>).<br>
+                Contoh: Rp 54.000 ➔ <code>54</code> (5=<strong>T</strong>, 4=<strong>S</strong>) ➔ <span class="badge" style="background: #EEF2FF; color: #4F46E5; font-family: monospace; font-weight: 800;">TS</span><br>
+                Contoh: Rp 20.000 ➔ <code>20</code> (2=<strong>D</strong>, 0=<strong>B</strong>) ➔ <span class="badge" style="background: #EEF2FF; color: #4F46E5; font-family: monospace; font-weight: 800;">DB</span>
+              </div>
+              <div>
+                &bull; <strong>Kelipatan 100:</strong> Buang 2 angka nol (<code>00</code>).<br>
+                Contoh: Rp 50.500 ➔ <code>505</code> (5=<strong>T</strong>, 0=<strong>B</strong>, 5=<strong>T</strong>) ➔ <span class="badge" style="background: #EEF2FF; color: #4F46E5; font-family: monospace; font-weight: 800;">TBT</span><br>
+                Contoh: Rp 5.000 ➔ <code>5</code> (5=<strong>T</strong>) ➔ <span class="badge" style="background: #EEF2FF; color: #4F46E5; font-family: monospace; font-weight: 800;">T</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -216,38 +250,59 @@
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="nama_mod">Nama / Kode MOD <span style="color: red;">*</span></label>
-              <input
-                id="nama_mod"
-                v-model="form.nama_mod"
-                type="text"
-                class="form-input"
-                placeholder="Contoh: X, CA, DT, CDS, TBA"
-                style="text-transform: uppercase; font-family: monospace; font-weight: 700;"
-                required
-                :disabled="saving"
-              />
-              <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block;">
-                Kode huruf rahasia modal yang tertera di barang / buku toko.
-              </span>
-            </div>
-
-            <div class="form-group">
               <label class="form-label" for="harga_beli">Harga Beli / Modal Asli (Rp) <span style="color: red;">*</span></label>
               <input
                 id="harga_beli"
                 v-model.number="form.harga_beli"
+                @input="onHargaBeliInput"
                 type="number"
                 min="0"
                 step="100"
                 class="form-input"
-                placeholder="Contoh: 2500 atau 15000"
+                placeholder="Contoh: 54000 atau 20000"
                 required
                 :disabled="saving"
               />
               <span style="font-size: 0.75rem; color: #005CE6; margin-top: 4px; display: block; font-weight: 600;">
                 Terbaca: Rp {{ formatNumber(form.harga_beli) }}
               </span>
+            </div>
+
+            <div class="form-group">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label class="form-label" for="nama_mod" style="margin-bottom: 0;">Nama / Kode MOD <span style="color: red;">*</span></label>
+                <button
+                  type="button"
+                  @click="recalcMod"
+                  class="btn-link"
+                  style="font-size: 0.75rem; color: var(--color-primary); background: none; border: none; cursor: pointer; text-decoration: underline; font-weight: 600;"
+                >
+                  Hitung Ulang dari Rumus
+                </button>
+              </div>
+              <input
+                id="nama_mod"
+                v-model="form.nama_mod"
+                type="text"
+                class="form-input"
+                placeholder="Otomatis dihitung dari harga..."
+                style="text-transform: uppercase; font-family: monospace; font-weight: 800; letter-spacing: 0.05em; font-size: 1.05rem; color: var(--color-primary);"
+                required
+                :disabled="saving"
+              />
+              <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block;">
+                Kode sandi modal huruf berdasarkan rumus harga beli (bisa disesuaikan manual).
+              </span>
+            </div>
+
+            <!-- Preview Live Perhitungan Rumus -->
+            <div v-if="form.harga_beli > 0" style="background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 8px; padding: 10px 14px; font-size: 0.8rem; color: #3730A3;">
+              <div style="font-weight: 700; margin-bottom: 2px; display: flex; align-items: center; gap: 6px;">
+                <span>✨ Penjelasan Rumus Sandi:</span>
+              </div>
+              <div style="font-family: monospace; font-size: 0.825rem; font-weight: 600;">
+                {{ getFormulaExplanation(form.harga_beli) }}
+              </div>
             </div>
           </div>
 
@@ -270,6 +325,11 @@ import { ref, computed, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
+import {
+  hargaToMod,
+  modToHarga,
+  MOD_CIPHER_TABLE
+} from '../utils/modHelper';
 import {
   KeyRound,
   Plus,
@@ -388,6 +448,48 @@ const openEditModal = (item) => {
   };
   modalError.value = '';
   showModal.value = true;
+};
+
+const onHargaBeliInput = () => {
+  if (form.value.harga_beli > 0) {
+    form.value.nama_mod = hargaToMod(form.value.harga_beli);
+  }
+};
+
+const recalcMod = () => {
+  if (form.value.harga_beli > 0) {
+    form.value.nama_mod = hargaToMod(form.value.harga_beli);
+  }
+};
+
+const getFormulaExplanation = (harga) => {
+  if (!harga || isNaN(harga) || Number(harga) <= 0) return '';
+  const num = Math.round(Number(harga));
+  let str = num.toString();
+  let strippedZeros = '';
+
+  if (num % 1000 === 0) {
+    str = (num / 1000).toString();
+    strippedZeros = '000 dibuang';
+  } else if (num % 100 === 0) {
+    str = (num / 100).toString();
+    strippedZeros = '00 dibuang';
+  } else if (num % 10 === 0) {
+    str = (num / 10).toString();
+    strippedZeros = '0 dibuang';
+  } else {
+    strippedZeros = 'angka penuh';
+  }
+
+  const map = {
+    '1': 'C', '2': 'D', '3': 'L', '4': 'S', '5': 'T',
+    '6': 'X', '7': 'A', '8': 'F', '9': 'Z', '0': 'B'
+  };
+
+  const steps = str.split('').map(d => `${d}=${map[d] || '?'}`).join(', ');
+  const resultMod = str.split('').map(d => map[d] || '').join('');
+
+  return `Rp ${formatNumber(num)} ➔ ${str} (${strippedZeros}) ➔ Nilai [${steps}] ➔ MOD "${resultMod}"`;
 };
 
 const closeModal = () => {

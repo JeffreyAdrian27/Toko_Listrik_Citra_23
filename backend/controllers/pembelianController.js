@@ -1,10 +1,12 @@
 const pool = require('../config/db');
 const { logActivity } = require('./activityController');
+const { hargaToMod, modToHarga } = require('../utils/modHelper');
 
 // Admin: Input Pembelian
 const createPembelian = async (req, res) => {
   const {
     barang_id,
+    harga_beli = 0,
     harga_baru_modal_satuan = '',
     jumlah_masuk,
     tanggal
@@ -15,14 +17,22 @@ const createPembelian = async (req, res) => {
   }
 
   const qty = parseInt(jumlah_masuk, 10);
-  const costCode = String(harga_baru_modal_satuan || '').trim().toUpperCase();
   const purchaseDate = tanggal || new Date().toISOString().split('T')[0];
 
   if (!qty || qty <= 0) {
     return res.status(400).json({ error: 'Jumlah masuk harus lebih besar dari 0.' });
   }
+
+  const hargaNum = parseFloat(harga_beli || 0);
+  let costCode = String(harga_baru_modal_satuan || '').trim().toUpperCase();
+
+  // Jika nominal harga_beli dikirim, otomatis generate kode MOD dari rumus
+  if (hargaNum > 0) {
+    costCode = hargaToMod(hargaNum);
+  }
+
   if (!costCode) {
-    return res.status(400).json({ error: 'Kode MOD (Harga Baru Modal Satuan) wajib diisi.' });
+    return res.status(400).json({ error: 'Harga beli / Modal satuan wajib diisi.' });
   }
 
   const connection = await pool.getConnection();
@@ -41,13 +51,25 @@ const createPembelian = async (req, res) => {
 
     const item = rows[0];
 
-    // Lookup unit cost from master_mod if available
-    const [modLookup] = await connection.execute(
-      'SELECT harga_beli FROM master_mod WHERE nama_mod = ?',
-      [costCode]
-    );
-    const unitCost = modLookup.length > 0 ? parseFloat(modLookup[0].harga_beli) : 0;
+    // Tentukan unit cost modal riil
+    let unitCost = hargaNum;
+    if (unitCost <= 0) {
+      const [modLookup] = await connection.execute(
+        'SELECT harga_beli FROM master_mod WHERE nama_mod = ?',
+        [costCode]
+      );
+      unitCost = modLookup.length > 0 ? parseFloat(modLookup[0].harga_beli) : modToHarga(costCode);
+    }
     const totalPembayaran = unitCost * qty;
+
+    // Sinkronkan ke master_mod di background agar perhitungan laporan & laba rugi selalu akurat
+    if (costCode && unitCost > 0) {
+      await connection.execute(`
+        INSERT INTO master_mod (nama_mod, harga_beli)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE harga_beli = VALUES(harga_beli)
+      `, [costCode, unitCost]);
+    }
 
     // 1. Insert into pembelian
     const [result] = await connection.execute(`

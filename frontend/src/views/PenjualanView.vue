@@ -14,7 +14,7 @@
     </div>
 
     <!-- 1. Form Input Penjualan Baru -->
-    <div class="card" style="border: 2px solid var(--color-primary-border);">
+    <div class="card overflow-visible" style="border: 2px solid var(--color-primary-border); position: relative; z-index: 30;">
       <div class="card-header" style="background: var(--color-primary-light);">
         <div style="display: flex; align-items: center; gap: 10px;">
           <ShoppingCart :size="20" style="color: var(--color-primary);" />
@@ -901,11 +901,30 @@ onMounted(() => {
   background: #FFFFFF;
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  max-height: 250px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15), 0 4px 10px rgba(0, 0, 0, 0.08);
+  max-height: 320px;
   overflow-y: auto;
-  z-index: 50;
-  margin-top: 4px;
+  z-index: 1000;
+  margin-top: 6px;
+  padding-bottom: 4px;
+}
+
+.autocomplete-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.autocomplete-dropdown::-webkit-scrollbar-track {
+  background: #F1F5F9;
+  border-radius: 4px;
+}
+
+.autocomplete-dropdown::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+
+.autocomplete-dropdown::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
 }
 
 .autocomplete-item {
@@ -913,6 +932,10 @@ onMounted(() => {
   border-bottom: 1px solid var(--border-light);
   cursor: pointer;
   transition: background var(--transition-fast);
+}
+
+.autocomplete-item:last-child {
+  border-bottom: none;
 }
 
 .autocomplete-item:hover {

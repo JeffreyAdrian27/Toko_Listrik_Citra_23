@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <!-- Form Input Pembelian -->
-    <div class="card">
+    <div class="card overflow-visible" style="position: relative; z-index: 30;">
       <div class="card-header">
         <div style="display: flex; align-items: center; gap: 10px;">
           <Truck :size="20" style="color: var(--color-primary);" />
@@ -27,7 +27,7 @@
             <!-- Autocomplete Barang -->
             <div class="form-group" style="position: relative;">
               <label class="form-label">Cari &amp; Pilih Barang</label>
-              <div class="search-input-box">
+              <div class="search-input-box" style="position: relative;">
                 <Search :size="16" class="icon" />
                 <input
                   v-model="searchQuery"
@@ -36,7 +36,17 @@
                   class="form-input"
                   placeholder="Ketik kode atau nama barang..."
                   autocomplete="off"
+                  style="padding-right: 32px;"
                 />
+                <button
+                  v-if="searchQuery"
+                  type="button"
+                  @click="clearSelection"
+                  style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--text-muted); display: flex; align-items: center; padding: 2px;"
+                  title="Hapus / Reset Pilihan"
+                >
+                  <X :size="16" />
+                </button>
               </div>
 
               <!-- Search dropdown -->
@@ -44,6 +54,7 @@
                 <div
                   v-for="item in searchResults"
                   :key="item.id"
+                  @mousedown.prevent="selectItem(item)"
                   @click="selectItem(item)"
                   class="autocomplete-item"
                 >
@@ -77,57 +88,58 @@
             </div>
           </div>
 
-          <!-- Format Kolom: HARGA LAMA & HARGA BARU MODAL SATUAN (PILIHAN DARI MASTER MOD) -->
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 14px;">
+          <!-- Format Kolom: HARGA LAMA & HARGA BELI (AUTO-GENERATE MOD) -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-top: 14px;">
             <div class="form-group">
-              <label class="form-label" style="color: #475569;">HARGA LAMA (MOD)</label>
-              <div class="form-input" style="background: #F1F5F9; font-family: monospace; font-weight: 800; font-size: 1.05rem; text-align: center; color: var(--color-primary);">
+              <label class="form-label" style="color: #475569; font-weight: 700;">HARGA LAMA (MOD)</label>
+              <div class="form-input" style="background: #F1F5F9; font-family: monospace; font-weight: 800; font-size: 1.05rem; text-align: center; color: var(--color-primary); display: flex; align-items: center; justify-content: center; height: 42px;">
                 {{ selectedItem ? (selectedItem.MOD || '-') : '-' }}
               </div>
               <p class="form-help">Kode MOD satuan sebelumnya.</p>
             </div>
 
-            <!-- Dropdown Pilihan MOD dari Master MOD (Tanpa Keterangan) -->
+            <!-- Input Harga Beli Modal Satuan (Rp) -->
             <div class="form-group">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <label class="form-label" for="harga_baru_modal" style="margin-bottom: 0;">HARGA BARU MODAL SATUAN</label>
-                <button
-                  type="button"
-                  @click="openQuickModModal"
-                  class="btn-link"
-                  style="font-size: 0.75rem; color: var(--color-primary); background: none; border: none; cursor: pointer; text-decoration: underline; font-weight: 600;"
-                >
-                  + Buat MOD Baru
-                </button>
-              </div>
-
-              <select
-                id="harga_baru_modal"
-                v-model="form.harga_baru_modal_satuan"
-                class="form-select"
-                style="font-family: monospace; font-weight: 800; font-size: 1rem; color: var(--color-primary);"
+              <label class="form-label" for="harga_beli_satuan" style="font-weight: 700;">
+                HARGA BELI MODAL (RP) <span style="color: red;">*</span>
+              </label>
+              <input
+                id="harga_beli_satuan"
+                v-model.number="form.harga_beli"
+                type="number"
+                min="0"
+                step="100"
+                class="form-input num"
+                placeholder="Contoh: 54000 atau 20000"
                 required
                 :disabled="!selectedItem"
-              >
-                <option value="" disabled>-- Pilih Kode MOD --</option>
-                <option
-                  v-for="m in registeredMods"
-                  :key="m.id"
-                  :value="m.nama_mod"
-                >
-                  {{ m.nama_mod }} &bull; Rp {{ formatNumber(m.harga_beli) }}
-                </option>
-              </select>
+              />
               <p class="form-help">
-                <span v-if="selectedModObj" style="color: #059669; font-weight: 600;">
-                  Modal Satuan: Rp {{ formatNumber(selectedModObj.harga_beli) }} &bull; Subtotal: Rp {{ formatNumber(selectedModObj.harga_beli * (form.jumlah_masuk || 0)) }}
+                <span v-if="form.harga_beli > 0" style="color: #059669; font-weight: 600;">
+                  Terbaca: Rp {{ formatNumber(form.harga_beli) }}
                 </span>
-                <span v-else>Pilih dari Master MOD yang sudah didaftarkan.</span>
+                <span v-else>Harga kulakan/beli asli dari supplier.</span>
+              </p>
+            </div>
+
+            <!-- Kode MOD Ter-Generate Otomatis -->
+            <div class="form-group">
+              <label class="form-label" style="color: #475569; font-weight: 700;">
+                MOD BARU (AUTO-GENERATE)
+              </label>
+              <div class="form-input" style="background: #EEF2FF; border: 1px solid #C7D2FE; font-family: monospace; font-weight: 800; font-size: 1.15rem; text-align: center; color: #4F46E5; display: flex; align-items: center; justify-content: center; height: 42px;">
+                {{ generatedMod || '-' }}
+              </div>
+              <p class="form-help">
+                <span v-if="generatedMod" style="color: #4F46E5; font-weight: 600;">
+                  ✨ Rumus sandi otomatis.
+                </span>
+                <span v-else>Otomatis muncul dari harga beli.</span>
               </p>
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="jumlah_masuk">Jumlah Masuk (Unit)</label>
+              <label class="form-label" for="jumlah_masuk" style="font-weight: 700;">JUMLAH MASUK (UNIT) <span style="color: red;">*</span></label>
               <input
                 id="jumlah_masuk"
                 v-model.number="form.jumlah_masuk"
@@ -137,10 +149,16 @@
                 required
                 :disabled="!selectedItem"
               />
+              <p class="form-help">
+                <span v-if="form.harga_beli > 0 && form.jumlah_masuk > 0" style="color: #059669; font-weight: 700;">
+                  Total: Rp {{ formatNumber(form.harga_beli * form.jumlah_masuk) }}
+                </span>
+                <span v-else>Jumlah barang masuk.</span>
+              </p>
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="tgl_beli">Tanggal Pembelian</label>
+              <label class="form-label" for="tgl_beli" style="font-weight: 700;">TANGGAL PEMBELIAN</label>
               <input
                 id="tgl_beli"
                 v-model="form.tanggal"
@@ -152,8 +170,8 @@
           </div>
 
           <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
-            <div v-if="selectedModObj && form.jumlah_masuk > 0" style="font-size: 0.95rem; color: #0F172A;">
-              Total Pembayaran Pasokan: <strong style="color: var(--color-primary); font-size: 1.15rem;">Rp {{ formatNumber(selectedModObj.harga_beli * form.jumlah_masuk) }}</strong>
+            <div v-if="form.harga_beli > 0 && form.jumlah_masuk > 0" style="font-size: 0.95rem; color: #0F172A;">
+              Total Pembayaran Pasokan: <strong style="color: var(--color-primary); font-size: 1.15rem;">Rp {{ formatNumber(form.harga_beli * form.jumlah_masuk) }}</strong>
             </div>
             <div v-else></div>
 
@@ -161,7 +179,7 @@
               type="submit"
               class="btn btn-primary"
               style="padding: 12px 28px; font-size: 0.95rem;"
-              :disabled="saving || !selectedItem || !form.harga_baru_modal_satuan.trim() || form.jumlah_masuk <= 0"
+              :disabled="saving || !selectedItem || !form.harga_beli || form.harga_beli <= 0 || form.jumlah_masuk <= 0"
             >
               <Check :size="18" />
               <span>{{ saving ? 'Menyimpan...' : 'Simpan Pembelian & Update MOD' }}</span>
@@ -293,64 +311,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Quick Modal Tambah MOD Baru (Tanpa Keterangan) -->
-    <div v-if="showQuickModModal" class="modal-backdrop" @click.self="showQuickModModal = false">
-      <div class="modal-content" style="max-width: 440px;">
-        <div class="modal-header">
-          <h3>Tambah Kode MOD Baru ke Master</h3>
-          <button @click="showQuickModModal = false" class="btn btn-sm btn-secondary" style="padding: 4px 8px;">
-            <X :size="16" />
-          </button>
-        </div>
-
-        <form @submit.prevent="saveQuickMod">
-          <div class="modal-body">
-            <div v-if="quickModError" class="badge badge-danger" style="display: block; margin-bottom: 12px; padding: 8px;">
-              {{ quickModError }}
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="q_nama_mod">Kode MOD <span style="color: red;">*</span></label>
-              <input
-                id="q_nama_mod"
-                v-model="quickModForm.nama_mod"
-                type="text"
-                class="form-input"
-                placeholder="Contoh: SXL, LC, TBA"
-                style="text-transform: uppercase; font-family: monospace; font-weight: 700;"
-                required
-              />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="q_harga_beli">Harga Beli / Modal Asli (Rp) <span style="color: red;">*</span></label>
-              <input
-                id="q_harga_beli"
-                v-model.number="quickModForm.harga_beli"
-                type="number"
-                min="0"
-                class="form-input"
-                placeholder="Rp"
-                required
-              />
-              <span style="font-size: 0.75rem; color: #005CE6; margin-top: 4px; display: block;">
-                Terbaca: Rp {{ formatNumber(quickModForm.harga_beli) }}
-              </span>
-            </div>
-          </div>
-
-          <div class="modal-footer">
-            <button type="button" @click="showQuickModModal = false" class="btn btn-secondary">
-              Batal
-            </button>
-            <button type="submit" class="btn btn-primary" :disabled="quickModSaving">
-              <span>{{ quickModSaving ? 'Menyimpan...' : 'Simpan & Pilih' }}</span>
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
   </AppLayout>
 </template>
 
@@ -359,6 +319,7 @@ import { ref, reactive, computed, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
+import { hargaToMod, modToHarga } from '../utils/modHelper';
 import { Truck, Search, Check, X } from 'lucide-vue-next';
 
 const searchQuery = ref('');
@@ -369,21 +330,14 @@ const historyLoading = ref(true);
 const successMsg = ref('');
 const errorMsg = ref('');
 
-const registeredMods = ref([]);
-
 const form = reactive({
-  harga_baru_modal_satuan: '',
+  harga_beli: 0,
   jumlah_masuk: 1,
   tanggal: new Date().toISOString().split('T')[0]
 });
 
-// Quick MOD Modal State (Tanpa Keterangan)
-const showQuickModModal = ref(false);
-const quickModSaving = ref(false);
-const quickModError = ref('');
-const quickModForm = reactive({
-  nama_mod: '',
-  harga_beli: 0
+const generatedMod = computed(() => {
+  return hargaToMod(form.harga_beli);
 });
 
 const monthNames = [
@@ -436,20 +390,6 @@ const formatNumber = (num) => {
   return new Intl.NumberFormat('id-ID').format(num);
 };
 
-const fetchMods = async () => {
-  try {
-    const res = await api.get('/mod');
-    registeredMods.value = res.data || [];
-  } catch (err) {
-    console.error('Failed to load registered MODs:', err);
-  }
-};
-
-const selectedModObj = computed(() => {
-  if (!form.harga_baru_modal_satuan) return null;
-  return registeredMods.value.find(m => m.nama_mod === form.harga_baru_modal_satuan) || null;
-});
-
 let searchTimeout = null;
 const searchItems = () => {
   clearTimeout(searchTimeout);
@@ -473,40 +413,34 @@ const selectItem = (item) => {
   selectedItem.value = item;
   searchQuery.value = `[${item.kode_barang}] ${item.nama_barang}`;
   searchResults.value = [];
-  form.harga_baru_modal_satuan = item.MOD || '';
+  
+  if (item.modal_harga_beli && Number(item.modal_harga_beli) > 0) {
+    form.harga_beli = Number(item.modal_harga_beli);
+  } else if (item.MOD) {
+    form.harga_beli = modToHarga(item.MOD);
+  } else {
+    form.harga_beli = 0;
+  }
+
+  if (!form.jumlah_masuk || form.jumlah_masuk <= 0) {
+    form.jumlah_masuk = 10;
+  }
+};
+
+const clearSelection = () => {
+  searchQuery.value = '';
+  searchResults.value = [];
+  selectedItem.value = null;
+  form.harga_beli = 0;
   form.jumlah_masuk = 10;
-};
-
-const openQuickModModal = () => {
-  quickModForm.nama_mod = '';
-  quickModForm.harga_beli = 0;
-  quickModError.value = '';
-  showQuickModModal.value = true;
-};
-
-const saveQuickMod = async () => {
-  if (!quickModForm.nama_mod.trim()) {
-    quickModError.value = 'Kode MOD wajib diisi.';
-    return;
-  }
-  quickModSaving.value = true;
-  quickModError.value = '';
-
-  try {
-    const res = await api.post('/mod', quickModForm);
-    await fetchMods();
-    // Otomatis pilih kode MOD yang baru saja dibuat
-    form.harga_baru_modal_satuan = res.data.mod.nama_mod;
-    showQuickModModal.value = false;
-  } catch (err) {
-    quickModError.value = err.response?.data?.error || 'Gagal menambahkan kode MOD baru.';
-  } finally {
-    quickModSaving.value = false;
-  }
 };
 
 const submitPembelian = async () => {
   if (!selectedItem.value) return;
+  if (!form.harga_beli || form.harga_beli <= 0) {
+    errorMsg.value = 'Harga beli modal satuan harus diisi dan lebih besar dari 0.';
+    return;
+  }
   saving.value = true;
   successMsg.value = '';
   errorMsg.value = '';
@@ -514,23 +448,24 @@ const submitPembelian = async () => {
   try {
     const res = await api.post('/pembelian', {
       barang_id: selectedItem.value.id,
-      harga_baru_modal_satuan: form.harga_baru_modal_satuan.trim().toUpperCase(),
+      harga_beli: form.harga_beli,
+      harga_baru_modal_satuan: generatedMod.value,
       jumlah_masuk: form.jumlah_masuk,
       tanggal: form.tanggal
     });
 
-    successMsg.value = `Pembelian berhasil dicatat! Stok [${selectedItem.value.nama_barang}] bertambah ${form.jumlah_masuk} unit (Sisa: ${res.data.data.stok_akhir} unit). MOD diperbarui ke "${form.harga_baru_modal_satuan.trim().toUpperCase()}".`;
+    successMsg.value = `Pembelian berhasil dicatat! Stok [${selectedItem.value.nama_barang}] bertambah ${form.jumlah_masuk} unit (Sisa: ${res.data.data.stok_akhir} unit). MOD otomatis dibuat menjadi "${generatedMod.value}".`;
 
     // Reset form
     searchQuery.value = '';
     selectedItem.value = null;
-    form.harga_baru_modal_satuan = '';
-    form.jumlah_masuk = 1;
+    form.harga_beli = 0;
+    form.jumlah_masuk = 10;
 
     historyPage.value = 1;
     fetchHistory();
   } catch (err) {
-    errorMsg.value = err.response?.data?.error || 'Gagal menyimpan transaksi pembelian.';
+    errorMsg.value = err.response?.data?.error || 'Gagal memproses transaksi pembelian.';
   } finally {
     saving.value = false;
   }
@@ -561,7 +496,6 @@ const formatDate = (dateStr) => {
 };
 
 onMounted(() => {
-  fetchMods();
   fetchHistory();
 });
 </script>
@@ -575,11 +509,30 @@ onMounted(() => {
   background: #FFFFFF;
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  max-height: 250px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15), 0 4px 10px rgba(0, 0, 0, 0.08);
+  max-height: 320px;
   overflow-y: auto;
-  z-index: 50;
-  margin-top: 4px;
+  z-index: 1000;
+  margin-top: 6px;
+  padding-bottom: 4px;
+}
+
+.autocomplete-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.autocomplete-dropdown::-webkit-scrollbar-track {
+  background: #F1F5F9;
+  border-radius: 4px;
+}
+
+.autocomplete-dropdown::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+
+.autocomplete-dropdown::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
 }
 
 .autocomplete-item {
@@ -587,6 +540,10 @@ onMounted(() => {
   border-bottom: 1px solid var(--border-light);
   cursor: pointer;
   transition: background var(--transition-fast);
+}
+
+.autocomplete-item:last-child {
+  border-bottom: none;
 }
 
 .autocomplete-item:hover {

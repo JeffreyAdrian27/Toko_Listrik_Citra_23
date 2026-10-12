@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { hargaToMod } = require('../utils/modHelper');
 
 // 1. Get all MODs (Full data with harga_beli for Admin)
 const getAllMod = async (req, res) => {
@@ -30,6 +31,16 @@ const createMod = async (req, res) => {
   try {
     let { nama_mod, harga_beli, keterangan } = req.body;
 
+    const hargaNum = parseFloat(harga_beli);
+    if (isNaN(hargaNum) || hargaNum < 0) {
+      return res.status(400).json({ error: 'Harga beli harus berupa angka nominal yang valid.' });
+    }
+
+    // Jika nama_mod kosong, hitung otomatis dari harga beli sesuai rumus Citra 23
+    if (!nama_mod && hargaNum > 0) {
+      nama_mod = hargaToMod(hargaNum);
+    }
+
     if (!nama_mod || typeof nama_mod !== 'string') {
       return res.status(400).json({ error: 'Nama / Kode MOD wajib diisi.' });
     }
@@ -37,11 +48,6 @@ const createMod = async (req, res) => {
     nama_mod = nama_mod.trim().toUpperCase();
     if (!nama_mod) {
       return res.status(400).json({ error: 'Nama / Kode MOD tidak boleh kosong.' });
-    }
-
-    const hargaNum = parseFloat(harga_beli);
-    if (isNaN(hargaNum) || hargaNum < 0) {
-      return res.status(400).json({ error: 'Harga beli harus berupa angka nominal yang valid.' });
     }
 
     // Check duplicate

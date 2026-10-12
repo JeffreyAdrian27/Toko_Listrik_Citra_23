@@ -86,7 +86,7 @@ const updateKategori = async (req, res) => {
       aksi: 'Ubah Kategori',
       entitas: 'Kategori',
       entitasId: id,
-      detail: `Mengubah nama kategori ID ${id} menjadi '${nama_kategori.trim()}'`,
+      detail: `Mengubah nama kategori menjadi '${nama_kategori.trim()}'`,
       ipAddress: clientIp
     });
 

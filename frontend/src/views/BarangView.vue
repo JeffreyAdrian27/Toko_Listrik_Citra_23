@@ -237,31 +237,45 @@
               </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-              <!-- Input MOD Kode Huruf Modal dari Master MOD -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+              <!-- Input Harga Beli / Modal (Rp) -->
               <div class="form-group">
-                <label class="form-label" for="mod_input">MOD (Kode Huruf Modal)</label>
-                <select
+                <label class="form-label" for="harga_beli">Harga Beli / Modal (Rp)</label>
+                <input
+                  id="harga_beli"
+                  v-model.number="itemForm.harga_beli"
+                  @input="onItemHargaBeliInput"
+                  type="number"
+                  min="0"
+                  step="100"
+                  class="form-input num"
+                  placeholder="Contoh: 54000"
+                />
+                <p class="form-help">
+                  <span v-if="itemForm.harga_beli > 0" style="color: #059669; font-weight: 600;">
+                    Rp {{ formatNumber(itemForm.harga_beli) }}
+                  </span>
+                  <span v-else>Modal kulakan satuan.</span>
+                </p>
+              </div>
+
+              <!-- MOD Ter-generate Otomatis -->
+              <div class="form-group">
+                <label class="form-label" for="mod_input">MOD (Kode Huruf)</label>
+                <input
                   id="mod_input"
                   v-model="itemForm.MOD"
-                  class="form-select"
-                  style="font-family: monospace; font-weight: 700; letter-spacing: 0.05em;"
+                  type="text"
+                  class="form-input"
+                  placeholder="Auto..."
+                  style="text-transform: uppercase; font-family: monospace; font-weight: 800; color: var(--color-primary); text-align: center; font-size: 1.05rem;"
                   required
-                >
-                  <option value="" disabled>-- Pilih Kode MOD --</option>
-                  <option
-                    v-for="m in registeredMods"
-                    :key="m.id"
-                    :value="m.nama_mod"
-                  >
-                    {{ m.nama_mod }} (Rp {{ formatNumber(m.harga_beli) }})
-                  </option>
-                </select>
-                <p class="form-help">Pilih dari Master Data MOD yang sudah didaftarkan.</p>
+                />
+                <p class="form-help">Auto dari harga beli.</p>
               </div>
 
               <div class="form-group">
-                <label class="form-label" for="harga_jual">Harga Jual Satuan (Rp)</label>
+                <label class="form-label" for="harga_jual">Harga Jual Satuan (Rp) <span style="color: red;">*</span></label>
                 <input
                   id="harga_jual"
                   v-model.number="itemForm.harga_jual"
@@ -271,6 +285,7 @@
                   min="0"
                   required
                 />
+                <p class="form-help">Harga jual ke konsumen.</p>
               </div>
             </div>
 
@@ -282,7 +297,7 @@
             >
               <AlertTriangle :size="18" style="flex-shrink: 0;" />
               <span>
-                <strong>Peringatan Jual Rugi:</strong> Modal MOD <strong>{{ selectedFormMod.nama_mod }}</strong> (Rp {{ formatNumber(selectedFormMod.harga_beli) }}) lebih tinggi dari Harga Jual (Rp {{ formatNumber(itemForm.harga_jual) }}).
+                <strong>Peringatan Jual Rugi:</strong> Modal MOD <strong>{{ itemForm.MOD }}</strong> (Perkiraan Rp {{ formatNumber(itemForm.harga_beli || modToHarga(itemForm.MOD)) }}) lebih tinggi dari Harga Jual (Rp {{ formatNumber(itemForm.harga_jual) }}).
               </span>
             </div>
 
@@ -345,35 +360,43 @@
               </div>
             </div>
 
-            <!-- Tampilan Tabel Format: HARGA LAMA | HARGA BARU MODAL SATUAN (seperti di foto 2) -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+            <!-- Tampilan Format: HARGA LAMA | HARGA BELI BARU | MOD BARU AUTO -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 16px;">
               <div class="form-group">
-                <label class="form-label" style="color: #475569;">HARGA LAMA (MOD)</label>
-                <div class="form-input" style="background: #F1F5F9; font-family: monospace; font-weight: 800; font-size: 1.05rem; color: var(--color-primary); text-align: center;">
+                <label class="form-label" style="color: #475569; font-weight: 700;">HARGA LAMA (MOD)</label>
+                <div class="form-input" style="background: #F1F5F9; font-family: monospace; font-weight: 800; font-size: 1.05rem; color: var(--color-primary); text-align: center; display: flex; align-items: center; justify-content: center; height: 42px;">
                   {{ activeStockItem?.MOD || '-' }}
                 </div>
                 <p class="form-help">Kode MOD saat ini.</p>
               </div>
 
               <div class="form-group">
-                <label class="form-label" for="harga_baru_modal">HARGA BARU MODAL SATUAN</label>
-                <select
-                  id="harga_baru_modal"
-                  v-model="tambahStokForm.harga_baru_modal_satuan"
-                  class="form-select"
-                  style="font-family: monospace; font-weight: 800; font-size: 1rem; color: var(--color-primary);"
+                <label class="form-label" for="tambah_stok_harga_beli" style="font-weight: 700;">HARGA BELI MODAL (RP) <span style="color: red;">*</span></label>
+                <input
+                  id="tambah_stok_harga_beli"
+                  v-model.number="tambahStokForm.harga_beli"
+                  @input="onTambahStokHargaInput"
+                  type="number"
+                  min="0"
+                  step="100"
+                  class="form-input num"
+                  placeholder="Contoh: 54000"
                   required
-                >
-                  <option value="" disabled>-- Pilih Kode MOD --</option>
-                  <option
-                    v-for="m in registeredMods"
-                    :key="m.id"
-                    :value="m.nama_mod"
-                  >
-                    {{ m.nama_mod }} &bull; Rp {{ formatNumber(m.harga_beli) }}
-                  </option>
-                </select>
-                <p class="form-help">Pilih kode huruf modal dari Master MOD.</p>
+                />
+                <p class="form-help">
+                  <span v-if="tambahStokForm.harga_beli > 0" style="color: #059669; font-weight: 600;">
+                    Rp {{ formatNumber(tambahStokForm.harga_beli) }}
+                  </span>
+                  <span v-else>Harga kulakan baru.</span>
+                </p>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" style="font-weight: 700;">MOD BARU (AUTO)</label>
+                <div class="form-input" style="background: #EEF2FF; border: 1px solid #C7D2FE; font-family: monospace; font-weight: 800; font-size: 1.15rem; color: #4F46E5; text-align: center; display: flex; align-items: center; justify-content: center; height: 42px;">
+                  {{ tambahStokForm.harga_baru_modal_satuan || '-' }}
+                </div>
+                <p class="form-help">Auto dari harga beli.</p>
               </div>
             </div>
 
@@ -385,7 +408,7 @@
             >
               <AlertTriangle :size="18" style="flex-shrink: 0;" />
               <span>
-                <strong>Peringatan Jual Rugi:</strong> Modal baru <strong>{{ selectedTambahStokMod.nama_mod }}</strong> (Rp {{ formatNumber(selectedTambahStokMod.harga_beli) }}) lebih tinggi dari Harga Jual barang saat ini (Rp {{ formatNumber(activeStockItem?.harga_jual) }}).
+                <strong>Peringatan Jual Rugi:</strong> Modal baru <strong>{{ tambahStokForm.harga_baru_modal_satuan }}</strong> (Perkiraan Rp {{ formatNumber(tambahStokForm.harga_beli || modToHarga(tambahStokForm.harga_baru_modal_satuan)) }}) lebih tinggi dari Harga Jual barang saat ini (Rp {{ formatNumber(activeStockItem?.harga_jual) }}).
               </span>
             </div>
 
@@ -431,6 +454,7 @@ import { ref, reactive, computed, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
+import { hargaToMod, modToHarga } from '../utils/modHelper';
 import {
   Package,
   Plus,
@@ -444,47 +468,26 @@ import {
 
 const items = ref([]);
 const categories = ref([]);
-const registeredMods = ref([]);
 const loading = ref(true);
-
-const fetchMods = async () => {
-  try {
-    const res = await api.get('/mod');
-    registeredMods.value = res.data || [];
-  } catch (err) {
-    console.error('Failed to load mods:', err);
-  }
-};
 
 // Deteksi apakah Harga Beli (MOD) > Harga Jual
 const isModalLebihTinggi = (item) => {
-  const modal = parseFloat(item.modal_harga_beli || 0);
+  const modal = parseFloat(item.modal_harga_beli || 0) || modToHarga(item.MOD || '');
   const jual = parseFloat(item.harga_jual || 0);
   return modal > 0 && modal > jual;
 };
 
 // Form Tambah/Edit Barang: Cek MOD vs Harga Jual
-const selectedFormMod = computed(() => {
-  if (!itemForm.MOD) return null;
-  return registeredMods.value.find(m => m.nama_mod === itemForm.MOD) || null;
-});
-
 const isFormModalLebihTinggi = computed(() => {
-  if (!selectedFormMod.value) return false;
-  const modal = parseFloat(selectedFormMod.value.harga_beli || 0);
+  const modal = itemForm.harga_beli ? parseFloat(itemForm.harga_beli) : modToHarga(itemForm.MOD);
   const jual = parseFloat(itemForm.harga_jual || 0);
   return modal > 0 && modal > jual;
 });
 
 // Modal Tambah Stok: Cek MOD vs Harga Jual
-const selectedTambahStokMod = computed(() => {
-  if (!tambahStokForm.harga_baru_modal_satuan) return null;
-  return registeredMods.value.find(m => m.nama_mod === tambahStokForm.harga_baru_modal_satuan) || null;
-});
-
 const isTambahStokModalLebihTinggi = computed(() => {
-  if (!selectedTambahStokMod.value || !activeStockItem.value) return false;
-  const modal = parseFloat(selectedTambahStokMod.value.harga_beli || 0);
+  if (!activeStockItem.value) return false;
+  const modal = tambahStokForm.harga_beli ? parseFloat(tambahStokForm.harga_beli) : modToHarga(tambahStokForm.harga_baru_modal_satuan);
   const jual = parseFloat(activeStockItem.value.harga_jual || 0);
   return modal > 0 && modal > jual;
 });
@@ -527,6 +530,7 @@ const itemForm = reactive({
   kategori_id: '',
   merk: '',
   stok_awal: 0,
+  harga_beli: 0,
   MOD: '',
   harga_jual: 0,
   keterangan: ''
@@ -538,10 +542,23 @@ const activeStockItem = ref(null);
 const tambahStokSaving = ref(false);
 const tambahStokError = ref('');
 const tambahStokForm = reactive({
+  harga_beli: 0,
   harga_baru_modal_satuan: '',
   jumlah_masuk: 1,
   tanggal: new Date().toISOString().split('T')[0]
 });
+
+const onItemHargaBeliInput = () => {
+  if (itemForm.harga_beli > 0) {
+    itemForm.MOD = hargaToMod(itemForm.harga_beli);
+  }
+};
+
+const onTambahStokHargaInput = () => {
+  if (tambahStokForm.harga_beli > 0) {
+    tambahStokForm.harga_baru_modal_satuan = hargaToMod(tambahStokForm.harga_beli);
+  }
+};
 
 let searchTimeout = null;
 const onSearchChange = () => {
@@ -598,6 +615,7 @@ const openCreateModal = () => {
   itemForm.kategori_id = categories.value.length > 0 ? categories.value[0].id : '';
   itemForm.merk = '';
   itemForm.stok_awal = 0;
+  itemForm.harga_beli = 0;
   itemForm.MOD = '';
   itemForm.harga_jual = 0;
   itemForm.keterangan = '';
@@ -610,6 +628,7 @@ const openEditModal = (item) => {
   itemForm.nama_barang = item.nama_barang;
   itemForm.kategori_id = item.kategori_id;
   itemForm.merk = item.merk;
+  itemForm.harga_beli = item.modal_harga_beli ? parseFloat(item.modal_harga_beli) : modToHarga(item.MOD || '');
   itemForm.MOD = item.MOD || '';
   itemForm.harga_jual = Number(item.harga_jual);
   itemForm.keterangan = item.keterangan || '';
@@ -641,6 +660,7 @@ const saveBarang = async () => {
 
 const openTambahStokModal = (item) => {
   activeStockItem.value = item;
+  tambahStokForm.harga_beli = item.modal_harga_beli ? parseFloat(item.modal_harga_beli) : modToHarga(item.MOD || '');
   tambahStokForm.harga_baru_modal_satuan = item.MOD || '';
   tambahStokForm.jumlah_masuk = 10;
   tambahStokForm.tanggal = new Date().toISOString().split('T')[0];
@@ -684,7 +704,6 @@ const formatNumber = (num) => {
 
 onMounted(() => {
   fetchCategories();
-  fetchMods();
   fetchBarang();
 });
 </script>

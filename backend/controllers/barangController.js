@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { logActivity } = require('./activityController');
+const { hargaToMod, modToHarga } = require('../utils/modHelper');
 
 // Helper to generate kode_barang per PRD rules
 async function generateKodeBarang(connection, merk) {
@@ -127,6 +128,7 @@ const createBarang = async (req, res) => {
     stok_awal = 0,
     MOD = '',
     harga_jual = 0,
+    harga_beli = 0,
     keterangan
   } = req.body;
 
@@ -139,7 +141,13 @@ const createBarang = async (req, res) => {
 
   const initialStock = parseInt(stok_awal || 0, 10);
   const sellPrice = parseFloat(harga_jual || 0);
-  const modCode = String(MOD || '').trim().toUpperCase();
+  const hargaBeliNum = parseFloat(harga_beli || 0);
+  let modCode = String(MOD || '').trim().toUpperCase();
+
+  // Jika harga_beli dikirim, otomatis generate MOD
+  if (hargaBeliNum > 0) {
+    modCode = hargaToMod(hargaBeliNum);
+  }
 
   const connection = await pool.getConnection();
   try {
@@ -166,6 +174,16 @@ const createBarang = async (req, res) => {
       keterangan || null
     ]);
 
+    // Sinkronkan ke master_mod di background
+    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modCode);
+    if (modCode && unitCost > 0) {
+      await connection.execute(`
+        INSERT INTO master_mod (nama_mod, harga_beli)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE harga_beli = VALUES(harga_beli)
+      `, [modCode, unitCost]);
+    }
+
     // Log Activity for Bell Notification
     await logActivity({
       tipe: 'barang',
@@ -180,7 +198,8 @@ const createBarang = async (req, res) => {
       data: {
         id: result.insertId,
         kode_barang,
-        nama_barang: nama_barang.trim()
+        nama_barang: nama_barang.trim(),
+        MOD: modCode
       }
     });
   } catch (err) {
@@ -200,6 +219,7 @@ const updateBarang = async (req, res) => {
     kategori_id,
     merk,
     MOD = '',
+    harga_beli = 0,
     harga_jual,
     keterangan
   } = req.body;
@@ -208,13 +228,17 @@ const updateBarang = async (req, res) => {
     return res.status(400).json({ error: 'Nama barang wajib diisi.' });
   }
 
+  const hargaBeliNum = parseFloat(harga_beli || 0);
+  let modCode = String(MOD || '').trim().toUpperCase();
+  if (hargaBeliNum > 0) {
+    modCode = hargaToMod(hargaBeliNum);
+  }
+
   try {
     const [existing] = await pool.execute('SELECT * FROM barang WHERE id = ?', [id]);
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Barang tidak ditemukan.' });
     }
-
-    const modCode = String(MOD || '').trim().toUpperCase();
 
     await pool.execute(`
       UPDATE barang
@@ -230,6 +254,16 @@ const updateBarang = async (req, res) => {
       id
     ]);
 
+    // Sinkronkan ke master_mod di background
+    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modCode);
+    if (modCode && unitCost > 0) {
+      await pool.execute(`
+        INSERT INTO master_mod (nama_mod, harga_beli)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE harga_beli = VALUES(harga_beli)
+      `, [modCode, unitCost]);
+    }
+
     return res.json({ message: 'Data barang berhasil diperbarui.' });
   } catch (err) {
     console.error('updateBarang error:', err);
@@ -241,20 +275,25 @@ const updateBarang = async (req, res) => {
 const tambahStokBarang = async (req, res) => {
   const { id } = req.params;
   const {
+    harga_beli = 0,
     harga_baru_modal_satuan = '',
     jumlah_masuk,
     tanggal
   } = req.body;
 
   const jumlah = parseInt(jumlah_masuk, 10);
-  const modBaru = String(harga_baru_modal_satuan || '').trim().toUpperCase();
+  const hargaBeliNum = parseFloat(harga_beli || 0);
+  let modBaru = String(harga_baru_modal_satuan || '').trim().toUpperCase();
+  if (hargaBeliNum > 0) {
+    modBaru = hargaToMod(hargaBeliNum);
+  }
   const tanggalBeli = tanggal || new Date().toISOString().split('T')[0];
 
   if (!jumlah || jumlah <= 0) {
     return res.status(400).json({ error: 'Jumlah masuk harus lebih besar dari 0.' });
   }
   if (!modBaru) {
-    return res.status(400).json({ error: 'Kode MOD baru (Harga Baru Modal Satuan) wajib diisi.' });
+    return res.status(400).json({ error: 'Harga beli (modal) wajib diisi untuk membuat kode MOD.' });
   }
 
   const connection = await pool.getConnection();
@@ -273,13 +312,16 @@ const tambahStokBarang = async (req, res) => {
 
     const item = rows[0];
 
+    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modBaru);
+    const totalPembayaran = unitCost * jumlah;
+
     // 1. Record in pembelian
     await connection.execute(`
       INSERT INTO pembelian (
         barang_id, kode_barang, nama_barang, harga_lama,
         harga_baru_modal_satuan, jumlah_masuk, total_pembayaran,
         tanggal, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       item.id,
       item.kode_barang,
@@ -287,9 +329,19 @@ const tambahStokBarang = async (req, res) => {
       item.MOD || null,
       modBaru,
       jumlah,
+      totalPembayaran,
       tanggalBeli,
       req.user.id
     ]);
+
+    // Sinkronkan ke master_mod di background
+    if (modBaru && unitCost > 0) {
+      await connection.execute(`
+        INSERT INTO master_mod (nama_mod, harga_beli)
+        VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE harga_beli = VALUES(harga_beli)
+      `, [modBaru, unitCost]);
+    }
 
     // 2. Update barang: update MOD code, increase total_masuk & stok_akhir
     await connection.execute(`
