@@ -258,10 +258,10 @@
           </div>
 
           <!-- Badge Brand Toko (Otomatis disembunyikan di layar kecil agar lega) -->
-          <div class="badge badge-blue desktop-brand-badge">
+          <!-- <div class="badge badge-blue desktop-brand-badge">
             <Zap :size="14" />
             <span>Citra 23 Palu</span>
-          </div>
+          </div> -->
         </div>
       </header>
 

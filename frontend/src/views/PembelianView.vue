@@ -14,7 +14,7 @@
     </div>
 
     <!-- Form Input Pembelian -->
-    <div class="card overflow-visible" style="position: relative; z-index: 30;">
+    <div class="card overflow-visible">
       <div class="card-header">
         <div style="display: flex; align-items: center; gap: 10px;">
           <Truck :size="20" style="color: var(--color-primary);" />
@@ -204,23 +204,25 @@
 
     <!-- Riwayat Pembelian dengan Filter Tahunan & Pagination 5 Transaksi per Halaman -->
     <div class="card" style="margin-top: 32px;">
-      <div class="card-header">
-        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-          <h3 class="card-title">Tabel Riwayat Pembelian &amp; Perubahan MOD</h3>
-          
-          <!-- Filter Periode: Pilihan Bulan atau 1 Tahun Penuh -->
-          <select v-model="filter.bulan" @change="onFilterChange" class="form-select" style="min-width: 180px;">
+      <div class="card-header" style="display: flex; flex-direction: column; gap: 14px; align-items: stretch;">
+        <!-- Baris Atas: Judul dan Total Pasokan -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <h3 class="card-title" style="margin: 0;">Tabel Riwayat Pembelian &amp; Perubahan MOD</h3>
+          <div style="font-weight: 700; color: var(--color-primary); font-size: 0.9rem;">
+            Total Pasokan: {{ historyData.total_qty }} unit ({{ historyData.total_transaksi }} transaksi)
+          </div>
+        </div>
+        
+        <!-- Baris Bawah (Di Bawah Judul): Filter Bulan & Tahun Berjajar Ke Samping -->
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <select v-model="filter.bulan" @change="onFilterChange" class="form-select" style="width: auto; min-width: 185px; max-width: 230px; height: 38px; font-size: 0.85rem; padding: 6px 12px;">
             <option value="all">📅 Semua Bulan (1 Tahun Penuh)</option>
             <option v-for="(m, i) in monthNames" :key="i" :value="i + 1">{{ m }}</option>
           </select>
 
-          <!-- Filter Tahun -->
-          <select v-model="filter.tahun" @change="onFilterChange" class="form-select" style="width: 110px;">
+          <select v-model="filter.tahun" @change="onFilterChange" class="form-select" style="width: 105px; height: 38px; font-size: 0.85rem; padding: 6px 10px;">
             <option v-for="y in [2024, 2025, 2026, 2027]" :key="y" :value="y">{{ y }}</option>
           </select>
-        </div>
-        <div style="font-weight: 700; color: var(--color-primary);">
-          Total Pasokan: {{ historyData.total_qty }} unit ({{ historyData.total_transaksi }} transaksi)
         </div>
       </div>
 

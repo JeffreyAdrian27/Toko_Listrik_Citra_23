@@ -27,7 +27,7 @@
     </div>
 
     <!-- 1. Form Input Penjualan Baru -->
-    <div class="card overflow-visible" style="border: 2px solid var(--color-primary-border); position: relative; z-index: 30;">
+    <div class="card overflow-visible" style="border: 2px solid var(--color-primary-border);">
       <div class="card-header" style="background: var(--color-primary-light);">
         <div style="display: flex; align-items: center; gap: 10px;">
           <ShoppingCart :size="20" style="color: var(--color-primary);" />
