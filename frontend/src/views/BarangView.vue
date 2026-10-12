@@ -335,86 +335,149 @@
       </div>
     </div>
 
-    <!-- Modal Tambah Stok (Tabel HARGA LAMA & HARGA BARU MODAL SATUAN seperti di foto 2) -->
+    <!-- Modal Tambah Stok & Update MOD (Desain Rapi & Elegan) -->
     <div v-if="showTambahStokModal" class="modal-backdrop" @click.self="closeTambahStokModal">
-      <div class="modal-content" style="max-width: 520px;">
-        <div class="modal-header">
-          <h3>Tambah Stok Masuk & Update MOD</h3>
-          <button @click="closeTambahStokModal" class="btn btn-sm btn-secondary" style="padding: 4px 8px;">
+      <div class="modal-content" style="max-width: 580px; border-radius: 14px; overflow: hidden; box-shadow: 0 20px 35px -5px rgba(0, 0, 0, 0.2);">
+        <!-- Modal Header -->
+        <div class="modal-header" style="padding: 18px 24px; border-bottom: 1px solid var(--border-light); background: #F8FAFC;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 40px; height: 40px; border-radius: 10px; background: var(--color-primary-light); color: var(--color-primary); display: flex; align-items: center; justify-content: center;">
+              <PackagePlus :size="22" stroke-width="2.5" />
+            </div>
+            <div>
+              <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--text-main);">
+                Tambah Stok Masuk &amp; Update MOD
+              </h3>
+              <p style="margin: 2px 0 0; font-size: 0.78rem; color: var(--text-muted);">
+                Pencatatan pasokan baru dan pembaruan sandi modal barang
+              </p>
+            </div>
+          </div>
+          <button @click="closeTambahStokModal" class="btn btn-sm btn-secondary" style="padding: 6px; border-radius: 8px;">
             <X :size="16" />
           </button>
         </div>
+
         <form @submit.prevent="submitTambahStok">
-          <div class="modal-body">
-            <div v-if="tambahStokError" class="badge badge-danger" style="display: block; margin-bottom: 14px; padding: 8px;">
+          <div class="modal-body" style="padding: 22px 24px;">
+            <div v-if="tambahStokError" class="badge badge-danger" style="display: block; margin-bottom: 16px; padding: 10px; border-radius: 8px;">
               {{ tambahStokError }}
             </div>
 
-            <div class="form-group" style="background: #F8FAFC; padding: 12px; border-radius: 8px; border: 1px solid var(--border-light);">
-              <div style="font-size: 0.8rem; color: var(--text-muted);">Barang yang dipilih:</div>
-              <div style="font-weight: 700; color: var(--color-primary); font-size: 0.95rem;">
-                [{{ activeStockItem?.kode_barang }}] {{ activeStockItem?.nama_barang }}
-              </div>
-              <div style="font-size: 0.8rem; margin-top: 4px;">
-                Stok saat ini: <strong>{{ activeStockItem?.stok_akhir }} unit</strong>
-              </div>
-            </div>
-
-            <!-- Tampilan Format: HARGA LAMA | HARGA BELI BARU | MOD BARU AUTO -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 16px;">
-              <div class="form-group">
-                <label class="form-label" style="color: #475569; font-weight: 700;">HARGA LAMA (MOD)</label>
-                <div class="form-input" style="background: #F1F5F9; font-family: monospace; font-weight: 800; font-size: 1.05rem; color: var(--color-primary); text-align: center; display: flex; align-items: center; justify-content: center; height: 42px;">
-                  {{ activeStockItem?.MOD || '-' }}
+            <!-- Kartu Info Produk Terpilih -->
+            <div style="background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%); border: 1px solid var(--border-light); border-radius: 10px; padding: 14px 16px; margin-bottom: 18px;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                    <span class="badge badge-blue" style="font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px;">
+                      {{ activeStockItem?.kode_barang }}
+                    </span>
+                    <span v-if="activeStockItem?.nama_kategori" style="font-size: 0.75rem; color: var(--text-muted); background: #E2E8F0; padding: 2px 8px; border-radius: 12px; font-weight: 600;">
+                      {{ activeStockItem?.nama_kategori }}
+                    </span>
+                  </div>
+                  <div style="font-weight: 800; font-size: 1.05rem; color: var(--text-main); line-height: 1.3;">
+                    {{ activeStockItem?.nama_barang }}
+                  </div>
                 </div>
-                <p class="form-help">Kode MOD saat ini.</p>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="tambah_stok_harga_beli" style="font-weight: 700;">HARGA BELI MODAL (RP) <span style="color: red;">*</span></label>
-                <input
-                  id="tambah_stok_harga_beli"
-                  v-model.number="tambahStokForm.harga_beli"
-                  @input="onTambahStokHargaInput"
-                  type="number"
-                  min="0"
-                  step="100"
-                  class="form-input num"
-                  placeholder="Contoh: 54000"
-                  required
-                />
-                <p class="form-help">
-                  <span v-if="tambahStokForm.harga_beli > 0" style="color: #059669; font-weight: 600;">
-                    Rp {{ formatNumber(tambahStokForm.harga_beli) }}
+                <div style="text-align: right; flex-shrink: 0;">
+                  <span class="badge" :class="activeStockItem?.stok_akhir > 0 ? 'badge-success' : 'badge-danger'" style="font-size: 0.75rem; font-weight: 700;">
+                    Stok Saat Ini: {{ activeStockItem?.stok_akhir || 0 }} unit
                   </span>
-                  <span v-else>Harga kulakan baru.</span>
-                </p>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" style="font-weight: 700;">MOD BARU (AUTO)</label>
-                <div class="form-input" style="background: #EEF2FF; border: 1px solid #C7D2FE; font-family: monospace; font-weight: 800; font-size: 1.15rem; color: #4F46E5; text-align: center; display: flex; align-items: center; justify-content: center; height: 42px;">
-                  {{ tambahStokForm.harga_baru_modal_satuan || '-' }}
                 </div>
-                <p class="form-help">Auto dari harga beli.</p>
+              </div>
+              <div style="display: flex; gap: 16px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-medium); font-size: 0.8rem; color: var(--text-muted);">
+                <span>Harga Jual Toko: <strong style="color: var(--text-main);">Rp {{ formatNumber(activeStockItem?.harga_jual) }}</strong></span>
+                <span>Merk: <strong style="color: var(--text-main);">{{ activeStockItem?.merk || '-' }}</strong></span>
               </div>
             </div>
 
-            <!-- Warning jika modal baru > harga jual saat ini -->
+            <!-- Panel Konfigurasi Modal & Sandi MOD -->
+            <div style="background: #FFFFFF; border: 1px solid var(--border-medium); border-radius: 12px; padding: 16px; margin-bottom: 18px; box-shadow: var(--shadow-sm);">
+              <div style="font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #475569; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                <Coins :size="15" style="color: var(--color-primary);" />
+                <span>Harga Beli Modal &amp; Pembaruan Sandi MOD</span>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 12px; align-items: flex-start;">
+                <!-- Kolom 1: MOD Lama -->
+                <div>
+                  <label style="display: block; font-size: 0.72rem; font-weight: 700; color: #64748B; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.3px;">
+                    MOD LAMA
+                  </label>
+                  <div style="background: #F1F5F9; border: 1px solid var(--border-light); border-radius: 8px; height: 44px; display: flex; align-items: center; justify-content: center; font-family: monospace; font-weight: 800; font-size: 1.15rem; color: #475569;">
+                    {{ activeStockItem?.MOD || '-' }}
+                  </div>
+                  <div style="font-size: 0.72rem; color: #94A3B8; text-align: center; margin-top: 4px;">
+                    MOD saat ini
+                  </div>
+                </div>
+
+                <!-- Kolom 2: Input Harga Beli Modal Baru -->
+                <div>
+                  <label for="tambah_stok_harga_beli" style="display: block; font-size: 0.72rem; font-weight: 700; color: var(--text-main); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.3px;">
+                    HARGA BELI (RP) <span style="color: red;">*</span>
+                  </label>
+                  <input
+                    id="tambah_stok_harga_beli"
+                    v-model.number="tambahStokForm.harga_beli"
+                    @input="onTambahStokHargaInput"
+                    type="number"
+                    min="0"
+                    step="100"
+                    class="form-input num"
+                    placeholder="Contoh: 5000"
+                    required
+                    style="height: 44px; font-weight: 700; font-size: 1rem; text-align: center; border-color: var(--color-primary-border);"
+                  />
+                  <div style="font-size: 0.75rem; text-align: center; margin-top: 4px; font-weight: 700; color: #059669;">
+                    <span v-if="tambahStokForm.harga_beli > 0">Rp {{ formatNumber(tambahStokForm.harga_beli) }}</span>
+                    <span v-else style="color: #94A3B8; font-weight: normal;">Harga kulakan</span>
+                  </div>
+                </div>
+
+                <!-- Kolom 3: MOD Baru Auto -->
+                <div>
+                  <label style="display: block; font-size: 0.72rem; font-weight: 700; color: #4F46E5; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.3px;">
+                    MOD BARU (AUTO)
+                  </label>
+                  <div style="background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 8px; height: 44px; display: flex; align-items: center; justify-content: center; font-family: monospace; font-weight: 800; font-size: 1.25rem; color: #4F46E5; box-shadow: 0 1px 2px rgba(79, 70, 229, 0.08);">
+                    {{ tambahStokForm.harga_baru_modal_satuan || '-' }}
+                  </div>
+                  <div style="font-size: 0.72rem; color: #6366F1; text-align: center; margin-top: 4px; font-weight: 600;">
+                    ✨ Rumus MOD
+                  </div>
+                </div>
+              </div>
+
+              <!-- Baris Ringkasan Estimasi Pasokan -->
+              <div v-if="tambahStokForm.harga_beli > 0 && tambahStokForm.jumlah_masuk > 0" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #F1F5F9; display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
+                <span style="color: var(--text-muted);">Total Tagihan Pasokan:</span>
+                <strong style="color: var(--color-primary); font-size: 1rem;">
+                  Rp {{ formatNumber(tambahStokForm.harga_beli * tambahStokForm.jumlah_masuk) }}
+                  <span style="font-size: 0.75rem; font-weight: normal; color: var(--text-muted);">({{ tambahStokForm.jumlah_masuk }} unit)</span>
+                </strong>
+              </div>
+            </div>
+
+            <!-- Peringatan Jika Modal Baru > Harga Jual Saat Ini -->
             <div
               v-if="isTambahStokModalLebihTinggi"
               class="badge badge-danger"
-              style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; font-size: 0.825rem; line-height: 1.4; text-align: left;"
+              style="display: flex; align-items: center; gap: 10px; margin-bottom: 18px; padding: 10px 14px; border-radius: 8px; font-size: 0.825rem; line-height: 1.4; text-align: left;"
             >
               <AlertTriangle :size="18" style="flex-shrink: 0;" />
-              <span>
-                <strong>Peringatan Jual Rugi:</strong> Modal baru <strong>{{ tambahStokForm.harga_baru_modal_satuan }}</strong> (Perkiraan Rp {{ formatNumber(tambahStokForm.harga_beli || modToHarga(tambahStokForm.harga_baru_modal_satuan)) }}) lebih tinggi dari Harga Jual barang saat ini (Rp {{ formatNumber(activeStockItem?.harga_jual) }}).
-              </span>
+              <div>
+                <strong>Peringatan Jual Rugi:</strong> Modal baru <strong>Rp {{ formatNumber(tambahStokForm.harga_beli) }}</strong> (Sandi: {{ tambahStokForm.harga_baru_modal_satuan }}) lebih tinggi dari Harga Jual saat ini (Rp {{ formatNumber(activeStockItem?.harga_jual) }}).
+              </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
-              <div class="form-group">
-                <label class="form-label" for="jumlah_masuk">Jumlah Masuk (Unit)</label>
+            <!-- Baris Input Jumlah Masuk & Tanggal -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="jumlah_masuk" style="font-weight: 700; font-size: 0.825rem; margin-bottom: 6px;">
+                  Jumlah Masuk (Unit) <span style="color: red;">*</span>
+                </label>
                 <input
                   id="jumlah_masuk"
                   v-model.number="tambahStokForm.jumlah_masuk"
@@ -422,25 +485,43 @@
                   class="form-input num"
                   min="1"
                   required
+                  style="height: 42px; font-weight: 700;"
                 />
+                <p class="form-help" style="margin-top: 4px; font-size: 0.75rem;">
+                  Total stok setelah masuk: <strong>{{ (activeStockItem?.stok_akhir || 0) + (tambahStokForm.jumlah_masuk || 0) }} unit</strong>
+                </p>
               </div>
 
-              <div class="form-group">
-                <label class="form-label" for="tanggal_masuk">Tanggal Transaksi</label>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label class="form-label" for="tanggal_masuk" style="font-weight: 700; font-size: 0.825rem; margin-bottom: 6px;">
+                  Tanggal Transaksi <span style="color: red;">*</span>
+                </label>
                 <input
                   id="tanggal_masuk"
                   v-model="tambahStokForm.tanggal"
                   type="date"
                   class="form-input"
                   required
+                  style="height: 42px;"
                 />
+                <p class="form-help" style="margin-top: 4px; font-size: 0.75rem;">Tanggal faktur pasokan.</p>
               </div>
             </div>
           </div>
-          <div class="modal-footer">
-            <button type="button" @click="closeTambahStokModal" class="btn btn-secondary">Batal</button>
-            <button type="submit" class="btn btn-primary" :disabled="tambahStokSaving">
-              {{ tambahStokSaving ? 'Menyimpan...' : 'Simpan & Tambah Stok' }}
+
+          <!-- Modal Footer -->
+          <div class="modal-footer" style="padding: 16px 24px; background: #F8FAFC; border-top: 1px solid var(--border-light); display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" @click="closeTambahStokModal" class="btn btn-secondary" style="padding: 10px 18px;">
+              Batal
+            </button>
+            <button
+              type="submit"
+              class="btn btn-primary"
+              style="padding: 10px 22px; display: flex; align-items: center; gap: 8px; font-weight: 700;"
+              :disabled="tambahStokSaving || !tambahStokForm.harga_beli || tambahStokForm.harga_beli <= 0 || tambahStokForm.jumlah_masuk <= 0"
+            >
+              <Check :size="16" />
+              <span>{{ tambahStokSaving ? 'Menyimpan...' : 'Simpan & Tambah Stok' }}</span>
             </button>
           </div>
         </form>
@@ -463,7 +544,11 @@ import {
   Edit2,
   Trash2,
   AlertTriangle,
-  X
+  X,
+  PackagePlus,
+  Coins,
+  Check,
+  Truck
 } from 'lucide-vue-next';
 
 const items = ref([]);
@@ -661,7 +746,7 @@ const saveBarang = async () => {
 const openTambahStokModal = (item) => {
   activeStockItem.value = item;
   tambahStokForm.harga_beli = item.modal_harga_beli ? parseFloat(item.modal_harga_beli) : modToHarga(item.MOD || '');
-  tambahStokForm.harga_baru_modal_satuan = item.MOD || '';
+  tambahStokForm.harga_baru_modal_satuan = item.MOD || (tambahStokForm.harga_beli > 0 ? hargaToMod(tambahStokForm.harga_beli) : '');
   tambahStokForm.jumlah_masuk = 10;
   tambahStokForm.tanggal = new Date().toISOString().split('T')[0];
   tambahStokError.value = '';

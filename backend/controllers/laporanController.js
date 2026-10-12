@@ -31,7 +31,7 @@ const getLaporanLabaRugi = async (req, res) => {
       }
     }
 
-    // 1. Rincian per barang dari penjualan aktif (JOIN master_mod untuk menghitung HPP & Laba Rugi)
+    // 1. Rincian per barang dari penjualan aktif (Menghitung HPP dari riwayat pembelian riil atau master_mod)
     const queryPerBarang = `
       SELECT 
         p.barang_id,
@@ -39,11 +39,44 @@ const getLaporanLabaRugi = async (req, res) => {
         p.kode_barang,
         p.nama_barang,
         p.harga_modal as MOD_kode,
-        COALESCE(m.harga_beli, 0) as harga_beli_modal,
+        COALESCE(
+          (SELECT (pb.total_pembayaran / pb.jumlah_masuk) 
+           FROM pembelian pb 
+           WHERE pb.barang_id = p.barang_id AND pb.tanggal <= p.tanggal 
+           ORDER BY pb.tanggal DESC, pb.id DESC LIMIT 1),
+          (SELECT (pb.total_pembayaran / pb.jumlah_masuk) 
+           FROM pembelian pb 
+           WHERE pb.barang_id = p.barang_id 
+           ORDER BY pb.id DESC LIMIT 1),
+          m.harga_beli,
+          0
+        ) as harga_beli_modal,
         SUM(p.jumlah) as total_terjual,
         SUM(p.omzet_penjualan) as total_omzet,
-        SUM(p.jumlah * COALESCE(m.harga_beli, 0)) as total_modal_hpp,
-        SUM(p.omzet_penjualan - (p.jumlah * COALESCE(m.harga_beli, 0))) as total_laba_kotor
+        SUM(p.jumlah * COALESCE(
+          (SELECT (pb.total_pembayaran / pb.jumlah_masuk) 
+           FROM pembelian pb 
+           WHERE pb.barang_id = p.barang_id AND pb.tanggal <= p.tanggal 
+           ORDER BY pb.tanggal DESC, pb.id DESC LIMIT 1),
+          (SELECT (pb.total_pembayaran / pb.jumlah_masuk) 
+           FROM pembelian pb 
+           WHERE pb.barang_id = p.barang_id 
+           ORDER BY pb.id DESC LIMIT 1),
+          m.harga_beli,
+          0
+        )) as total_modal_hpp,
+        SUM(p.omzet_penjualan - (p.jumlah * COALESCE(
+          (SELECT (pb.total_pembayaran / pb.jumlah_masuk) 
+           FROM pembelian pb 
+           WHERE pb.barang_id = p.barang_id AND pb.tanggal <= p.tanggal 
+           ORDER BY pb.tanggal DESC, pb.id DESC LIMIT 1),
+          (SELECT (pb.total_pembayaran / pb.jumlah_masuk) 
+           FROM pembelian pb 
+           WHERE pb.barang_id = p.barang_id 
+           ORDER BY pb.id DESC LIMIT 1),
+          m.harga_beli,
+          0
+        ))) as total_laba_kotor
       FROM penjualan p
       LEFT JOIN master_mod m ON m.nama_mod = p.harga_modal
       WHERE p.status = 'aktif' ${dateConditionPenjualan}

@@ -70,7 +70,16 @@ const getAllBarang = async (req, res) => {
       SELECT 
         b.id, b.kode_barang, b.nama_barang, b.kategori_id, k.nama_kategori,
         b.merk, b.stok_awal, b.total_masuk, b.total_keluar, b.stok_akhir,
-        b.\`MOD\`, m.harga_beli as modal_harga_beli, b.harga_jual, b.keterangan, b.created_at
+        b.\`MOD\`, 
+        COALESCE(
+          (SELECT (pb.total_pembayaran / pb.jumlah_masuk) 
+           FROM pembelian pb 
+           WHERE pb.barang_id = b.id 
+           ORDER BY pb.id DESC LIMIT 1),
+          m.harga_beli,
+          0
+        ) as modal_harga_beli,
+        b.harga_jual, b.keterangan, b.created_at
       FROM barang b
       LEFT JOIN kategori k ON b.kategori_id = k.id
       LEFT JOIN master_mod m ON m.nama_mod = b.\`MOD\`

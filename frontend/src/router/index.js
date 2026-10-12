@@ -9,7 +9,6 @@ import PenjualanView from '../views/PenjualanView.vue';
 import PembelianView from '../views/PembelianView.vue';
 import LaporanView from '../views/LaporanView.vue';
 import PegawaiView from '../views/PegawaiView.vue';
-import ModView from '../views/ModView.vue';
 import AuditLogView from '../views/AuditLogView.vue';
 
 const routes = [

@@ -132,7 +132,7 @@
               </div>
               <p class="form-help">
                 <span v-if="generatedMod" style="color: #4F46E5; font-weight: 600;">
-                  ✨ Rumus sandi otomatis.
+                  ✨ Rumus MOD otomatis.
                 </span>
                 <span v-else>Otomatis muncul dari harga beli.</span>
               </p>
