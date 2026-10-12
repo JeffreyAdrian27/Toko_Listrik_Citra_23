@@ -283,6 +283,7 @@ import {
   pendingCount,
   processSyncQueue,
   mirrorCatalogFromServer,
+  cleanUserCacheOnLogout,
   syncStatusMessage
 } from '../services/syncManager';
 import {
@@ -407,8 +408,30 @@ const formatTimeAgo = (dateStr) => {
 };
 
 const handleLogout = async () => {
-  if (confirm('Apakah Anda yakin ingin keluar dari sistem?')) {
+  let proceed = false;
+
+  if (pendingCount.value > 0) {
+    proceed = confirm(
+      `Perhatian: Masih ada ${pendingCount.value} transaksi offline yang belum tersinkronkan ke server. Jika Anda keluar sekarang, data transaksi akan tetap aman disimpan di perangkat ini dan akan diunggah begitu kasir login kembali saat online.\n\nApakah Anda yakin ingin tetap keluar?`
+    );
+  } else {
+    proceed = confirm('Apakah Anda yakin ingin keluar dari sistem?');
+  }
+
+  if (proceed) {
+    // 1. Hentikan timer polling notifikasi
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+
+    // 2. Bersihkan offline_sales (riwayat nota kasir hari ini di browser)
+    await cleanUserCacheOnLogout();
+
+    // 3. Hapus token JWT dan info user dari auth store & localStorage
     await auth.logout();
+
+    // 4. Arahkan kembali ke halaman login
     router.push('/login');
   }
 };

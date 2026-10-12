@@ -258,3 +258,16 @@ export function initSyncService() {
     });
   }
 }
+
+/**
+ * Bersihkan data sesi & cache kasir saat logout
+ * (Katalog barang, kategori, & antrean transaksi offline TETAP DIPERTAHANKAN agar aman)
+ */
+export async function cleanUserCacheOnLogout() {
+  try {
+    await db.offline_sales.clear();
+  } catch (err) {
+    console.error('Failed to clear offline_sales on logout:', err);
+  }
+}
+
