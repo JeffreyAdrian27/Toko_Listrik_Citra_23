@@ -129,19 +129,28 @@ const forgotPassword = async (req, res) => {
     }
 
     const admin = admins[0];
-    const registeredAdminEmail = (admin.email || process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+    const registeredAdminEmail = (admin.email || process.env.ADMIN_EMAIL || 'jeffreyadrian27@gmail.com').trim().toLowerCase();
 
-    // Validasi ketat: Input HARUS cocok dengan email admin
-    if (!registeredAdminEmail || inputEmail !== registeredAdminEmail) {
+    // Validasi ketat: Input HARUS cocok dengan email admin terdaftar
+    const allowedEmails = [
+      registeredAdminEmail,
+      (process.env.SMTP_USER || '').trim().toLowerCase(),
+      'jeffreyadrian27@gmail.com',
+      'jeffreyadrian2702@gmail.com'
+    ].filter(Boolean);
+
+    if (!allowedEmails.includes(inputEmail)) {
       return res.status(400).json({
         error: 'Email salah, harus menggunakan email admin.'
       });
     }
 
+    const targetEmail = inputEmail;
+
     // 2. Proteksi Anti-Spam: Cek apakah ada request dalam 10 menit terakhir
     const [recentRequests] = await pool.execute(
       'SELECT id, created_at FROM password_resets WHERE email = ? AND created_at > NOW() - INTERVAL 10 MINUTE',
-      [registeredAdminEmail]
+      [targetEmail]
     );
 
     if (recentRequests.length > 0) {
@@ -153,7 +162,7 @@ const forgotPassword = async (req, res) => {
     // 3. Proteksi Batas Harian: Maksimal 3 kali dalam 24 jam
     const [dailyRequests] = await pool.execute(
       'SELECT COUNT(id) as count FROM password_resets WHERE email = ? AND created_at > NOW() - INTERVAL 24 HOUR',
-      [registeredAdminEmail]
+      [targetEmail]
     );
 
     if (dailyRequests[0].count >= 3) {
@@ -169,16 +178,16 @@ const forgotPassword = async (req, res) => {
     // Simpan ke tabel password_resets
     await pool.execute(
       'INSERT INTO password_resets (user_id, email, token, expires_at) VALUES (?, ?, ?, ?)',
-      [admin.id, registeredAdminEmail, token, expiresAt]
+      [admin.id, targetEmail, token, expiresAt]
     );
 
-    // 5. Kirim email via Resend
+    // 5. Kirim email via Google SMTP (Gmail)
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
 
     try {
       await sendResetPasswordEmail({
-        to: registeredAdminEmail,
+        to: targetEmail,
         resetUrl,
         adminName: admin.nama
       });
@@ -187,9 +196,8 @@ const forgotPassword = async (req, res) => {
       // Hapus token yang baru dibuat agar tidak menggantung jika pengiriman gagal
       await pool.execute('DELETE FROM password_resets WHERE token = ?', [token]);
       
-      // Jangan tampilkan pesan error teknis Resend bahasa Inggris ke user
       return res.status(500).json({
-        error: 'Gagal mengirim email pemulihan. Pastikan konfigurasi domain email sudah benar atau coba lagi nanti.'
+        error: 'Gagal mengirim email pemulihan via Google SMTP. Periksa koneksi internet atau konfigurasi email.'
       });
     }
 

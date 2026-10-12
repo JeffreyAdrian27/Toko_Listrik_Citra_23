@@ -15,7 +15,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const modRoutes = require('./routes/modRoutes');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 
 // Security & Anti-Dorking per PRD 5.1
 app.disable('x-powered-by');

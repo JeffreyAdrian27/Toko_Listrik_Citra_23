@@ -100,7 +100,7 @@
 
         <div class="modal-body">
           <p style="font-size: 0.85rem; color: #64748B; margin-top: 0; margin-bottom: 16px; line-height: 1.5;">
-            Masukkan alamat email admin Anda. Sistem akan mengirimkan tautan pemulihan satu kali pakai via <strong>Resend</strong> yang berlaku selama <strong>15 menit</strong>.
+            Masukkan alamat email admin Anda. Sistem akan mengirimkan tautan pemulihan satu kali pakai via <strong>Gmail</strong> yang berlaku selama <strong>15 menit</strong>.
           </p>
 
           <div v-if="forgotSuccessMsg" class="success-alert">
@@ -205,6 +205,7 @@ const forgotSuccessMsg = ref('');
 const forgotErrorMsg = ref('');
 
 const openForgotModal = () => {
+  forgotEmail.value = '';
   forgotErrorMsg.value = '';
   forgotSuccessMsg.value = '';
   showForgotModal.value = true;
@@ -212,6 +213,7 @@ const openForgotModal = () => {
 
 const closeForgotModal = () => {
   showForgotModal.value = false;
+  forgotEmail.value = '';
   forgotErrorMsg.value = '';
   forgotSuccessMsg.value = '';
 };

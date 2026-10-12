@@ -1,13 +1,30 @@
 /**
- * Service untuk Pengiriman Email via Resend API
+ * Service untuk Pengiriman Email via Google SMTP (Gmail)
  * Toko Listrik Citra 23 Palu
  */
+const nodemailer = require('nodemailer');
+
+function getTransporter() {
+  const user = (process.env.SMTP_USER || process.env.ADMIN_EMAIL || 'jeffreyadrian27@gmail.com').trim();
+  const pass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
+
+  if (!pass) {
+    throw new Error('SMTP_PASS (Google App Password) belum dikonfigurasi di file .env.');
+  }
+
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: user,
+      pass: pass
+    }
+  });
+}
 
 async function sendResetPasswordEmail({ to, resetUrl, adminName }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    throw new Error('RESEND_API_KEY belum dikonfigurasi di file .env.');
-  }
+  const transporter = getTransporter();
+  const smtpUser = (process.env.SMTP_USER || process.env.ADMIN_EMAIL || 'jeffreyadrian27@gmail.com').trim();
+  const fromAddress = process.env.EMAIL_FROM || `Toko Listrik Citra 23 <${smtpUser}>`;
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -38,7 +55,7 @@ async function sendResetPasswordEmail({ to, resetUrl, adminName }) {
           <p>Kami menerima permintaan untuk mereset kata sandi akun Administrator Anda pada sistem Toko Listrik Citra 23.</p>
           
           <div class="btn-wrapper">
-            <a href="${resetUrl}" class="btn" target="_blank">Reset Password Saya </a>
+            <a href="${resetUrl}" class="btn" target="_blank" style="color: #ffffff;">Reset Password Saya</a>
           </div>
 
           <div class="info-box">
@@ -62,30 +79,15 @@ async function sendResetPasswordEmail({ to, resetUrl, adminName }) {
     </html>
   `;
 
-  const payload = {
-    from: 'Toko Citra 23 <onboarding@resend.dev>',
-    to: [to],
+  const mailOptions = {
+    from: fromAddress,
+    to: to,
     subject: 'Permintaan Reset Password Admin - Toko Listrik Citra 23 Palu',
     html: htmlContent
   };
 
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  const resData = await response.json();
-
-  if (!response.ok) {
-    const errorMsg = resData.message || resData.error || 'Gagal mengirim email via Resend.';
-    throw new Error(errorMsg);
-  }
-
-  return resData;
+  const info = await transporter.sendMail(mailOptions);
+  return info;
 }
 
 module.exports = {
