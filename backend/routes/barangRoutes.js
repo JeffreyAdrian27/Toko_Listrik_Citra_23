@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getAllBarang,
+  getBarangById,
   lookupBarang,
   createBarang,
   updateBarang,
@@ -17,6 +18,7 @@ router.get('/lookup', lookupBarang);
 
 // Accessible only by Admin
 router.get('/', requireRole('admin'), getAllBarang);
+router.get('/:id', requireRole('admin'), getBarangById);
 router.post('/', requireRole('admin'), createBarang);
 router.put('/:id', requireRole('admin'), updateBarang);
 router.post('/:id/tambah-stok', requireRole('admin'), tambahStokBarang);

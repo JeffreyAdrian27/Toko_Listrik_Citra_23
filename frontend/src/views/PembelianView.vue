@@ -316,11 +316,14 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
 import { hargaToMod, modToHarga } from '../utils/modHelper';
 import { Truck, Search, Check, X } from 'lucide-vue-next';
+
+const route = useRoute();
 
 const searchQuery = ref('');
 const searchResults = ref([]);
@@ -495,8 +498,23 @@ const formatDate = (dateStr) => {
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 };
 
+const checkQueryParam = async () => {
+  const barangId = route.query.barang_id;
+  if (!barangId) return;
+  try {
+    const res = await api.get(`/barang/${barangId}`);
+    if (res.data && res.data.data) {
+      selectItem(res.data.data);
+      form.jumlah_masuk = 10;
+    }
+  } catch (err) {
+    console.error('Failed to pre-select item from query:', err);
+  }
+};
+
 onMounted(() => {
   fetchHistory();
+  checkQueryParam();
 });
 </script>
 

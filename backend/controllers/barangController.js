@@ -105,6 +105,41 @@ const getAllBarang = async (req, res) => {
   }
 };
 
+// Admin: Get single barang by ID
+const getBarangById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await pool.query(`
+      SELECT 
+        b.id, b.kode_barang, b.nama_barang, b.kategori_id, k.nama_kategori,
+        b.merk, b.stok_awal, b.total_masuk, b.total_keluar, b.stok_akhir,
+        b.\`MOD\`, 
+        COALESCE(
+          (SELECT (pb.total_pembayaran / pb.jumlah_masuk) 
+           FROM pembelian pb 
+           WHERE pb.barang_id = b.id 
+           ORDER BY pb.id DESC LIMIT 1),
+          m.harga_beli,
+          0
+        ) as modal_harga_beli,
+        b.harga_jual, b.keterangan, b.created_at
+      FROM barang b
+      LEFT JOIN kategori k ON b.kategori_id = k.id
+      LEFT JOIN master_mod m ON m.nama_mod = b.\`MOD\`
+      WHERE b.id = ? AND b.deleted_at IS NULL
+    `, [id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Barang tidak ditemukan.' });
+    }
+
+    return res.json({ data: rows[0] });
+  } catch (err) {
+    console.error('getBarangById error:', err);
+    return res.status(500).json({ error: 'Gagal mengambil data barang.' });
+  }
+};
+
 // Pegawai / Kasir Lookup (Read-only, MINIMAL, NO MOD per PRD FR-JUAL-8)
 const lookupBarang = async (req, res) => {
   try {
@@ -415,6 +450,7 @@ const deleteBarang = async (req, res) => {
 
 module.exports = {
   getAllBarang,
+  getBarangById,
   lookupBarang,
   createBarang,
   updateBarang,
