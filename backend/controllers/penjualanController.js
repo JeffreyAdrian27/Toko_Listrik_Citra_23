@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { logActivity } = require('./activityController');
+const { modToHarga } = require('../utils/modHelper');
 
 // Input Penjualan Baru (Admin & Pegawai)
 const createPenjualan = async (req, res) => {
@@ -26,7 +27,7 @@ const createPenjualan = async (req, res) => {
     await connection.beginTransaction();
 
     const [rows] = await connection.execute(
-      'SELECT id, kode_barang, nama_barang, `MOD`, harga_jual, stok_akhir, deleted_at FROM barang WHERE id = ? FOR UPDATE',
+      'SELECT id, kode_barang, nama_barang, `MOD`, harga_jual, modal_harga_beli, stok_akhir, deleted_at FROM barang WHERE id = ? FOR UPDATE',
       [barang_id]
     );
 
@@ -46,20 +47,24 @@ const createPenjualan = async (req, res) => {
 
     const hargaJual = parseFloat(item.harga_jual);
     const modCode = item.MOD || '';
+    const modalSatuan = item.modal_harga_beli && parseFloat(item.modal_harga_beli) > 0
+      ? parseFloat(item.modal_harga_beli)
+      : modToHarga(modCode);
     const omzet = hargaJual * qty;
 
-    // 1. Insert into penjualan (Snapshot MOD code)
+    // 1. Insert into penjualan (Snapshot MOD code dan modal_satuan)
     const [insertResult] = await connection.execute(`
       INSERT INTO penjualan (
-        barang_id, kode_barang, nama_barang, harga_jual, harga_modal,
+        barang_id, kode_barang, nama_barang, harga_jual, harga_modal, modal_satuan,
         jumlah, omzet_penjualan, tanggal, created_by, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif')
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aktif')
     `, [
       item.id,
       item.kode_barang,
       item.nama_barang,
       hargaJual,
       modCode,
+      modalSatuan,
       qty,
       omzet,
       saleDate,

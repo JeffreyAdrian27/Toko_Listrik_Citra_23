@@ -2,17 +2,90 @@ const pool = require('../config/db');
 const { logActivity } = require('./activityController');
 const { hargaToMod, modToHarga } = require('../utils/modHelper');
 
-// Helper to generate kode_barang per PRD rules
-async function generateKodeBarang(connection, merk) {
-  let prefix = 'NN';
-  if (merk && merk.trim()) {
-    const cleaned = merk.trim().replace(/[^a-zA-Z]/g, '').toUpperCase();
-    if (cleaned.length > 0) {
-      prefix = cleaned.substring(0, 3);
+// Helper to generate prefix candidates based on brand name
+function generatePrefixCandidates(rawMerk) {
+  if (!rawMerk || !rawMerk.trim()) return ['NN'];
+  const cleaned = rawMerk.trim().replace(/[^a-zA-Z]/g, '').toUpperCase();
+  if (cleaned.length === 0) return ['NN'];
+  if (cleaned.length <= 3) return [cleaned.padEnd(3, 'X')];
+
+  const candidates = [];
+  const addCandidate = (c) => {
+    if (c && c.length === 3 && !candidates.includes(c)) {
+      candidates.push(c);
+    }
+  };
+
+  // 1. Standar utama: 3 huruf pertama
+  addCandidate(cleaned.substring(0, 3));
+
+  // Ambil huruf pertama & daftar konsonan berikutnya
+  const vowels = ['A', 'E', 'I', 'O', 'U'];
+  const firstLetter = cleaned[0];
+  const otherConsonants = [];
+  for (let i = 1; i < cleaned.length; i++) {
+    if (!vowels.includes(cleaned[i])) {
+      otherConsonants.push(cleaned[i]);
     }
   }
 
-  const fullPrefix = `C23${prefix}`;
+  // 2. Huruf ke-1 + 2 konsonan berikutnya (misal: DEXTA -> DXT, DEXCOM -> DXC)
+  if (otherConsonants.length >= 2) {
+    addCandidate(firstLetter + otherConsonants[0] + otherConsonants[1]);
+  }
+
+  // 3. Huruf ke-1 + konsonan ke-1 + konsonan ke-3
+  if (otherConsonants.length >= 3) {
+    addCandidate(firstLetter + otherConsonants[0] + otherConsonants[2]);
+  }
+
+  // 4. Huruf ke-1 + huruf ke-2 + huruf ke-4 (variasi suku kata)
+  if (cleaned.length >= 4) {
+    addCandidate(cleaned[0] + cleaned[1] + cleaned[3]);
+  }
+
+  // 5. Huruf ke-1 + 2 huruf terakhir
+  if (cleaned.length >= 3) {
+    addCandidate(cleaned[0] + cleaned[cleaned.length - 2] + cleaned[cleaned.length - 1]);
+  }
+
+  return candidates;
+}
+
+// Helper to generate kode_barang with dynamic collision resolution
+async function generateKodeBarang(connection, merk) {
+  const candidates = generatePrefixCandidates(merk);
+  const targetMerkNormalized = (merk || '').trim().toLowerCase();
+
+  let chosenPrefix = candidates[0];
+
+  for (const cand of candidates) {
+    const fullPrefix = `C23${cand}`;
+
+    // Cek apakah prefix ini sudah pernah dipakai di tabel barang
+    const [existing] = await connection.execute(
+      'SELECT DISTINCT LOWER(TRIM(merk)) AS merk FROM barang WHERE kode_barang LIKE ? AND deleted_at IS NULL',
+      [`${fullPrefix}%`]
+    );
+
+    if (existing.length === 0) {
+      // Belum ada yang pakai -> bebas digunakan
+      chosenPrefix = cand;
+      break;
+    }
+
+    // Jika sudah ada yang pakai, cek apakah merk-nya sama
+    const isSameMerk = existing.some(row => row.merk === targetMerkNormalized);
+    if (isSameMerk) {
+      // Prefix ini sah milik merk ini -> lanjutkan
+      chosenPrefix = cand;
+      break;
+    }
+
+    // Jika dipakai oleh merk yang berbeda -> terjadi konflik, coba kandidat berikutnya
+  }
+
+  const fullPrefix = `C23${chosenPrefix}`;
 
   const [rows] = await connection.execute(
     'SELECT kode_barang FROM barang WHERE kode_barang LIKE ? ORDER BY LENGTH(kode_barang) DESC, kode_barang DESC LIMIT 1 FOR UPDATE',
@@ -71,18 +144,10 @@ const getAllBarang = async (req, res) => {
         b.id, b.kode_barang, b.nama_barang, b.kategori_id, k.nama_kategori,
         b.merk, b.stok_awal, b.total_masuk, b.total_keluar, b.stok_akhir,
         b.\`MOD\`, 
-        COALESCE(
-          (SELECT (pb.total_pembayaran / pb.jumlah_masuk) 
-           FROM pembelian pb 
-           WHERE pb.barang_id = b.id 
-           ORDER BY pb.id DESC LIMIT 1),
-          m.harga_beli,
-          0
-        ) as modal_harga_beli,
+        b.modal_harga_beli,
         b.harga_jual, b.keterangan, b.created_at
       FROM barang b
       LEFT JOIN kategori k ON b.kategori_id = k.id
-      LEFT JOIN master_mod m ON m.nama_mod = b.\`MOD\`
       ${whereClause}
       ORDER BY b.id DESC
       LIMIT ? OFFSET ?
@@ -114,18 +179,10 @@ const getBarangById = async (req, res) => {
         b.id, b.kode_barang, b.nama_barang, b.kategori_id, k.nama_kategori,
         b.merk, b.stok_awal, b.total_masuk, b.total_keluar, b.stok_akhir,
         b.\`MOD\`, 
-        COALESCE(
-          (SELECT (pb.total_pembayaran / pb.jumlah_masuk) 
-           FROM pembelian pb 
-           WHERE pb.barang_id = b.id 
-           ORDER BY pb.id DESC LIMIT 1),
-          m.harga_beli,
-          0
-        ) as modal_harga_beli,
+        b.modal_harga_beli,
         b.harga_jual, b.keterangan, b.created_at
       FROM barang b
       LEFT JOIN kategori k ON b.kategori_id = k.id
-      LEFT JOIN master_mod m ON m.nama_mod = b.\`MOD\`
       WHERE b.id = ? AND b.deleted_at IS NULL
     `, [id]);
 
@@ -200,12 +257,14 @@ const createBarang = async (req, res) => {
     const kode_barang = await generateKodeBarang(connection, merk);
     const stok_akhir = initialStock;
 
+    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modCode);
+
     const [result] = await connection.execute(`
       INSERT INTO barang (
         kode_barang, nama_barang, kategori_id, merk,
         stok_awal, total_masuk, total_keluar, stok_akhir,
-        \`MOD\`, harga_jual, keterangan
-      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)
+        \`MOD\`, harga_jual, modal_harga_beli, keterangan
+      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)
     `, [
       kode_barang,
       nama_barang.trim(),
@@ -215,18 +274,9 @@ const createBarang = async (req, res) => {
       stok_akhir,
       modCode,
       sellPrice,
+      unitCost,
       keterangan || null
     ]);
-
-    // Sinkronkan ke master_mod di background
-    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modCode);
-    if (modCode && unitCost > 0) {
-      await connection.execute(`
-        INSERT INTO master_mod (nama_mod, harga_beli)
-        VALUES (?, ?)
-        ON DUPLICATE KEY UPDATE harga_beli = VALUES(harga_beli)
-      `, [modCode, unitCost]);
-    }
 
     // Log Activity for Bell Notification
     await logActivity({
@@ -284,9 +334,11 @@ const updateBarang = async (req, res) => {
       return res.status(404).json({ error: 'Barang tidak ditemukan.' });
     }
 
+    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modCode);
+
     await pool.execute(`
       UPDATE barang
-      SET nama_barang = ?, kategori_id = ?, merk = ?, \`MOD\` = ?, harga_jual = ?, keterangan = ?
+      SET nama_barang = ?, kategori_id = ?, merk = ?, \`MOD\` = ?, harga_jual = ?, modal_harga_beli = ?, keterangan = ?
       WHERE id = ?
     `, [
       nama_barang.trim(),
@@ -294,19 +346,35 @@ const updateBarang = async (req, res) => {
       merk ? merk.trim() : '',
       modCode,
       parseFloat(harga_jual || 0),
+      unitCost,
       keterangan || null,
       id
     ]);
 
-    // Sinkronkan ke master_mod di background
-    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modCode);
-    if (modCode && unitCost > 0) {
-      await pool.execute(`
-        INSERT INTO master_mod (nama_mod, harga_beli)
-        VALUES (?, ?)
-        ON DUPLICATE KEY UPDATE harga_beli = VALUES(harga_beli)
-      `, [modCode, unitCost]);
+    // Catat log aktivitas (notifikasi lonceng)
+    const changes = [];
+    if (existing[0].nama_barang !== nama_barang.trim()) {
+      changes.push(`Nama: "${existing[0].nama_barang}" → "${nama_barang.trim()}"`);
     }
+    if ((existing[0].merk || '') !== (merk ? merk.trim() : '')) {
+      changes.push(`Merk: "${existing[0].merk || '-'}" → "${merk ? merk.trim() : '-'}"`);
+    }
+    if (parseFloat(existing[0].harga_jual) !== parseFloat(harga_jual || 0)) {
+      changes.push(`Harga: Rp ${parseFloat(existing[0].harga_jual || 0).toLocaleString('id-ID')} → Rp ${parseFloat(harga_jual || 0).toLocaleString('id-ID')}`);
+    }
+    if ((existing[0].MOD || '') !== modCode) {
+      changes.push(`MOD: "${existing[0].MOD || '-'}" → "${modCode || '-'}"`);
+    }
+
+    const detailLog = changes.length > 0
+      ? `Barang [${existing[0].kode_barang}] diperbarui (${changes.join(', ')}).`
+      : `Barang [${existing[0].kode_barang}] ${nama_barang.trim()} berhasil diperbarui.`;
+
+    await logActivity({
+      tipe: 'barang',
+      judul: 'Barang Diperbarui',
+      detail: detailLog
+    });
 
     return res.json({ message: 'Data barang berhasil diperbarui.' });
   } catch (err) {
@@ -378,24 +446,16 @@ const tambahStokBarang = async (req, res) => {
       req.user.id
     ]);
 
-    // Sinkronkan ke master_mod di background
-    if (modBaru && unitCost > 0) {
-      await connection.execute(`
-        INSERT INTO master_mod (nama_mod, harga_beli)
-        VALUES (?, ?)
-        ON DUPLICATE KEY UPDATE harga_beli = VALUES(harga_beli)
-      `, [modBaru, unitCost]);
-    }
-
-    // 2. Update barang: update MOD code, increase total_masuk & stok_akhir
+    // 2. Update barang: update MOD code, modal_harga_beli, increase total_masuk & stok_akhir
     await connection.execute(`
       UPDATE barang
       SET 
         \`MOD\` = ?,
+        modal_harga_beli = ?,
         total_masuk = total_masuk + ?,
         stok_akhir = stok_akhir + ?
       WHERE id = ?
-    `, [modBaru, jumlah, jumlah, item.id]);
+    `, [modBaru, unitCost, jumlah, jumlah, item.id]);
 
     // 3. Log Activity for Bell Notification
     await logActivity({
@@ -437,9 +497,23 @@ const deleteBarang = async (req, res) => {
 
     if (sales.length > 0 || purchases.length > 0) {
       await pool.execute('UPDATE barang SET deleted_at = NOW() WHERE id = ?', [id]);
+
+      await logActivity({
+        tipe: 'barang',
+        judul: 'Barang Diarsipkan',
+        detail: `Barang [${item.kode_barang}] "${item.nama_barang}" diarsipkan (memiliki riwayat transaksi).`
+      });
+
       return res.json({ message: 'Barang berhasil diarsipkan karena memiliki riwayat transaksi.' });
     } else {
       await pool.execute('DELETE FROM barang WHERE id = ?', [id]);
+
+      await logActivity({
+        tipe: 'barang',
+        judul: 'Barang Dihapus',
+        detail: `Barang [${item.kode_barang}] "${item.nama_barang}" berhasil dihapus permanen.`
+      });
+
       return res.json({ message: 'Barang berhasil dihapus secara permanen.' });
     }
   } catch (err) {

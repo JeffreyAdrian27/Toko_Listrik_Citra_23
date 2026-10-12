@@ -601,7 +601,12 @@ const saveBarang = async () => {
       );
     } else {
       const tempId = 'offline_b_' + Date.now();
-      const newKode = 'OFF-' + (itemForm.merk ? itemForm.merk.substring(0, 3).toUpperCase() : 'BRG') + '-' + Math.floor(100 + Math.random() * 900);
+      const cleanMerk = itemForm.merk ? itemForm.merk.trim().replace(/[^a-zA-Z]/g, '').toUpperCase() : '';
+      let merkPrefix = 'NN';
+      if (cleanMerk) {
+        merkPrefix = (cleanMerk === 'DEXCOM' || cleanMerk.startsWith('DEXCOM')) ? 'DXC' : cleanMerk.substring(0, 3);
+      }
+      const newKode = 'C23' + merkPrefix + Math.floor(10000 + Math.random() * 90000);
       await db.barang.add({
         id: tempId,
         kode_barang: newKode,

@@ -21,9 +21,8 @@ const getDashboardStats = async (req, res) => {
       SELECT 
         COUNT(p.id) as transaksi_hari_ini,
         COALESCE(SUM(p.omzet_penjualan), 0) as omzet_hari_ini,
-        COALESCE(SUM(p.omzet_penjualan - (p.jumlah * COALESCE(m.harga_beli, 0))), 0) as laba_hari_ini
+        COALESCE(SUM(p.omzet_penjualan - (p.jumlah * COALESCE(p.modal_satuan, 0))), 0) as laba_hari_ini
       FROM penjualan p
-      LEFT JOIN master_mod m ON m.nama_mod = p.harga_modal
       WHERE p.tanggal = ? AND p.status = 'aktif'
     `, [today]);
 
@@ -33,9 +32,8 @@ const getDashboardStats = async (req, res) => {
         COUNT(p.id) as transaksi_bulan_ini,
         COALESCE(SUM(p.omzet_penjualan), 0) as omzet_bulan_ini,
         COALESCE(SUM(p.jumlah), 0) as unit_terjual_bulan_ini,
-        COALESCE(SUM(p.omzet_penjualan - (p.jumlah * COALESCE(m.harga_beli, 0))), 0) as laba_bulan_ini
+        COALESCE(SUM(p.omzet_penjualan - (p.jumlah * COALESCE(p.modal_satuan, 0))), 0) as laba_bulan_ini
       FROM penjualan p
-      LEFT JOIN master_mod m ON m.nama_mod = p.harga_modal
       WHERE YEAR(p.tanggal) = ? AND MONTH(p.tanggal) = ? AND p.status = 'aktif'
     `, [currentYear, currentMonth]);
 

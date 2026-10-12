@@ -52,24 +52,8 @@ const createPembelian = async (req, res) => {
     const item = rows[0];
 
     // Tentukan unit cost modal riil
-    let unitCost = hargaNum;
-    if (unitCost <= 0) {
-      const [modLookup] = await connection.execute(
-        'SELECT harga_beli FROM master_mod WHERE nama_mod = ?',
-        [costCode]
-      );
-      unitCost = modLookup.length > 0 ? parseFloat(modLookup[0].harga_beli) : modToHarga(costCode);
-    }
+    let unitCost = hargaNum > 0 ? hargaNum : modToHarga(costCode);
     const totalPembayaran = unitCost * qty;
-
-    // Sinkronkan ke master_mod di background agar perhitungan laporan & laba rugi selalu akurat
-    if (costCode && unitCost > 0) {
-      await connection.execute(`
-        INSERT INTO master_mod (nama_mod, harga_beli)
-        VALUES (?, ?)
-        ON DUPLICATE KEY UPDATE harga_beli = VALUES(harga_beli)
-      `, [costCode, unitCost]);
-    }
 
     // 1. Insert into pembelian
     const [result] = await connection.execute(`
@@ -90,15 +74,16 @@ const createPembelian = async (req, res) => {
       req.user.id
     ]);
 
-    // 2. Update barang: update MOD code, total_masuk, stok_akhir
+    // 2. Update barang: update MOD code, modal_harga_beli, total_masuk, stok_akhir
     await connection.execute(`
       UPDATE barang
       SET 
         \`MOD\` = ?,
+        modal_harga_beli = ?,
         total_masuk = total_masuk + ?,
         stok_akhir = stok_akhir + ?
       WHERE id = ?
-    `, [costCode, qty, qty, item.id]);
+    `, [costCode, unitCost, qty, qty, item.id]);
 
     // 3. Log Activity for Bell Notification
     await logActivity({

@@ -22,17 +22,6 @@ CREATE TABLE IF NOT EXISTS kategori (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- 2b. Table Master MOD (Sandi Modal & Harga Beli Asli khusus Admin)
-CREATE TABLE IF NOT EXISTS master_mod (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  nama_mod VARCHAR(50) NOT NULL UNIQUE,
-  harga_beli DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-  keterangan VARCHAR(255) NULL DEFAULT '',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_nama_mod (nama_mod)
-) ENGINE=InnoDB;
-
 -- 3. Table Barang
 -- MOD adalah kode rahasia huruf modal (e.g. T, CA, DT, CDS, TBA, dll.)
 CREATE TABLE IF NOT EXISTS barang (
@@ -47,6 +36,7 @@ CREATE TABLE IF NOT EXISTS barang (
   total_keluar INT NOT NULL DEFAULT 0,
   stok_akhir INT NOT NULL DEFAULT 0,
   harga_jual DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  modal_harga_beli DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   keterangan TEXT NULL,
   deleted_at TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -63,6 +53,7 @@ CREATE TABLE IF NOT EXISTS penjualan (
   nama_barang VARCHAR(150) NOT NULL,
   harga_jual DECIMAL(12,2) NOT NULL,
   harga_modal VARCHAR(20) NOT NULL DEFAULT '',
+  modal_satuan DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   jumlah INT NOT NULL,
   omzet_penjualan DECIMAL(12,2) NOT NULL,
   tanggal DATE NOT NULL,
