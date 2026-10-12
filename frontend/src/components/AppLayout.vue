@@ -170,14 +170,20 @@
             <!-- Dropdown Log Notifikasi -->
             <div v-if="showBellDropdown" class="bell-dropdown" @click.stop>
               <div class="bell-dropdown-header">
-                <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">
-                  Log Aktivitas Toko
+                <div>
+                  <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">
+                    Log Aktivitas Toko
+                  </div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">
+                    Riwayat 30 hari terakhir
+                  </div>
                 </div>
                 <button
                   v-if="unreadCount > 0"
                   @click="markAllRead"
                   class="btn btn-sm btn-secondary"
-                  style="font-size: 0.72rem; padding: 2px 8px;"
+                  style="font-size: 0.72rem; padding: 2px 8px; font-weight: 600;"
+                  title="Tandai semua sudah dibaca"
                 >
                   Tandai Dibaca
                 </button>
@@ -193,17 +199,31 @@
                   <div class="bell-item-icon" :class="log.tipe">
                     <Package v-if="log.tipe === 'barang'" :size="16" />
                     <ShoppingCart v-else-if="log.tipe === 'penjualan'" :size="16" />
-                    <Truck v-else :size="16" />
+                    <Truck v-else-if="log.tipe === 'pembelian'" :size="16" />
+                    <Layers v-else-if="log.tipe === 'kategori'" :size="16" />
+                    <Bell v-else :size="16" />
                   </div>
-                  <div class="bell-item-content">
-                    <div class="bell-item-title">{{ log.judul }}</div>
+                  <div class="bell-item-content" style="flex: 1; min-width: 0;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                      <div class="bell-item-title">{{ log.judul }}</div>
+                      <div style="display: flex; align-items: center; gap: 6px;">
+                        <span v-if="!log.is_read" class="unread-dot" title="Belum dibaca"></span>
+                        <button
+                          @click.stop="deleteSingleLog(log.id)"
+                          class="btn-dismiss-log"
+                          title="Hapus notifikasi ini"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    </div>
                     <div class="bell-item-detail">{{ log.detail }}</div>
                     <div class="bell-item-time">{{ formatTimeAgo(log.created_at) }}</div>
                   </div>
                 </div>
 
                 <div v-if="activityLogs.length === 0" style="padding: 24px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
-                  Belum ada log aktivitas.
+                  Belum ada log aktivitas dalam 30 hari terakhir.
                 </div>
               </div>
             </div>
@@ -225,7 +245,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import api from '../api';
@@ -259,6 +279,7 @@ watch(() => route.path, () => {
 const showBellDropdown = ref(false);
 const activityLogs = ref([]);
 const unreadCount = ref(0);
+let pollTimer = null;
 
 const userInitials = computed(() => {
   if (!auth.user?.nama) return 'U';
@@ -308,11 +329,27 @@ const closeBellDropdown = () => {
   showBellDropdown.value = false;
 };
 
+const deleteSingleLog = async (id) => {
+  try {
+    const target = activityLogs.value.find(l => l.id === id);
+    await api.delete(`/activity/${id}`);
+    activityLogs.value = activityLogs.value.filter(l => l.id !== id);
+    if (target && !target.is_read) {
+      unreadCount.value = Math.max(0, unreadCount.value - 1);
+    }
+  } catch (err) {
+    console.error('Failed to delete single log:', err);
+  }
+};
+
 const markAllRead = async () => {
   try {
     await api.post('/activity/mark-read');
     unreadCount.value = 0;
-    activityLogs.value.forEach(l => { l.is_read = 1; });
+    // Log yang berumur <= 30 hari TETAP MUNCUL di daftar, statusnya saja yang menjadi sudah dibaca
+    activityLogs.value.forEach(l => {
+      l.is_read = 1;
+    });
   } catch (err) {
     console.error('Failed to mark read:', err);
   }
@@ -337,9 +374,20 @@ const handleLogout = async () => {
   }
 };
 
+const handleActivityUpdated = () => {
+  fetchActivityLogs();
+};
+
 onMounted(() => {
   fetchActivityLogs();
-  setInterval(fetchActivityLogs, 30000);
+  window.addEventListener('activity-updated', handleActivityUpdated);
+  // Polling setiap 5 detik agar notifikasi dari kasir/user lain langsung update secara otomatis
+  pollTimer = setInterval(fetchActivityLogs, 5000);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('activity-updated', handleActivityUpdated);
+  if (pollTimer) clearInterval(pollTimer);
 });
 </script>
 
@@ -452,6 +500,12 @@ onMounted(() => {
   justify-content: center;
   padding: 0 4px;
   border: 2px solid #FFFFFF;
+  animation: badgePop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes badgePop {
+  0% { transform: scale(0.4); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .bell-dropdown {
@@ -523,6 +577,11 @@ onMounted(() => {
   color: #B45309;
 }
 
+.bell-item-icon.kategori {
+  background: #EEF2FF;
+  color: #4F46E5;
+}
+
 .bell-item-content {
   flex: 1;
   min-width: 0;
@@ -545,6 +604,32 @@ onMounted(() => {
   font-size: 0.7rem;
   color: var(--text-subtle);
   margin-top: 4px;
+}
+
+.unread-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-primary);
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.btn-dismiss-log {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all var(--transition-fast);
+}
+
+.btn-dismiss-log:hover {
+  background-color: #FEE2E2;
+  color: #DC2626;
 }
 
 /* Penyesuaian Responsif Tablet & Layar Kecil */

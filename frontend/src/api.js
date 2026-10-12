@@ -20,9 +20,16 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Intercept response to catch 401 unauthorized & clear session
+// Intercept response to catch mutations & trigger activity log refresh
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = response.config?.method?.toLowerCase();
+    const url = response.config?.url || '';
+    if (['post', 'put', 'patch', 'delete'].includes(method) && !url.includes('/activity') && !url.includes('/auth')) {
+      window.dispatchEvent(new CustomEvent('activity-updated'));
+    }
+    return response;
+  },
   (error) => {
     if (error.response && error.response.status === 401) {
       localStorage.removeItem('token');

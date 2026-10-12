@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { logAudit } = require('../middleware/audit');
+const { logActivity } = require('./activityController');
 
 const getAllKategori = async (req, res) => {
   try {
@@ -33,6 +34,7 @@ const createKategori = async (req, res) => {
       [nama_kategori.trim()]
     );
 
+    // 1. Audit Trail (Immutable Log)
     await logAudit({
       userId: req.user.id,
       role: req.user.role,
@@ -41,6 +43,13 @@ const createKategori = async (req, res) => {
       entitasId: result.insertId,
       detail: `Menambahkan kategori: ${nama_kategori.trim()}`,
       ipAddress: clientIp
+    });
+
+    // 2. Log Aktivitas Toko (Notifikasi Lonceng)
+    await logActivity({
+      tipe: 'kategori',
+      judul: 'Kategori Baru Ditambahkan',
+      detail: `Kategori "${nama_kategori.trim()}" berhasil ditambahkan ke inventaris.`
     });
 
     return res.status(201).json({
@@ -79,6 +88,12 @@ const updateKategori = async (req, res) => {
       entitasId: id,
       detail: `Mengubah nama kategori ID ${id} menjadi '${nama_kategori.trim()}'`,
       ipAddress: clientIp
+    });
+
+    await logActivity({
+      tipe: 'kategori',
+      judul: 'Kategori Diperbarui',
+      detail: `Nama kategori berhasil diubah menjadi "${nama_kategori.trim()}".`
     });
 
     return res.json({ message: 'Kategori berhasil diperbarui.' });
@@ -121,6 +136,12 @@ const deleteKategori = async (req, res) => {
       entitasId: id,
       detail: `Menghapus kategori '${catName}'`,
       ipAddress: clientIp
+    });
+
+    await logActivity({
+      tipe: 'kategori',
+      judul: 'Kategori Dihapus',
+      detail: `Kategori "${catName}" telah dihapus dari sistem.`
     });
 
     return res.json({ message: 'Kategori berhasil dihapus.' });

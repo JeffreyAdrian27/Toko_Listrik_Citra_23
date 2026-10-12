@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS pembelian (
 -- 6. Table Activity Log (Notifikasi Lonceng: Barang Baru, Penjualan Baru, Pembelian Baru)
 CREATE TABLE IF NOT EXISTS activity_log (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  tipe ENUM('barang', 'penjualan', 'pembelian') NOT NULL,
+  tipe VARCHAR(50) NOT NULL,
   judul VARCHAR(150) NOT NULL,
   detail TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
