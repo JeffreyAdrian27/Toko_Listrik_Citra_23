@@ -76,7 +76,12 @@
                         Stok: {{ item.stok_akhir }}
                       </span>
                     </div>
-                    <div style="font-size: 0.85rem; font-weight: 600; margin-top: 2px;">{{ item.nama_barang }}</div>
+                    <div style="font-size: 0.85rem; font-weight: 600; margin-top: 2px;">
+                      {{ item.nama_barang }}
+                      <span v-if="item.merk" class="badge" style="background: #F1F5F9; color: #475569; font-size: 0.72rem; margin-left: 6px; padding: 2px 6px;">
+                        {{ item.merk }}
+                      </span>
+                    </div>
                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
                       Harga: <strong>Rp {{ formatNumber(item.harga_jual) }}</strong>
                     </div>

@@ -74,7 +74,12 @@
                       <span style="font-weight: 700; color: var(--color-primary);">{{ item.kode_barang }}</span>
                       <span class="badge badge-blue">Stok: {{ item.stok_akhir }}</span>
                     </div>
-                    <div style="font-weight: 600; font-size: 0.85rem; margin-top: 2px;">{{ item.nama_barang }}</div>
+                    <div style="font-weight: 600; font-size: 0.85rem; margin-top: 2px;">
+                      {{ item.nama_barang }}
+                      <span v-if="item.merk" class="badge" style="background: #F1F5F9; color: #475569; font-size: 0.72rem; margin-left: 6px; padding: 2px 6px;">
+                        {{ item.merk }}
+                      </span>
+                    </div>
                     <div style="font-size: 0.8rem; color: var(--text-muted);">
                       MOD Sekarang: <strong style="font-family: monospace; color: var(--color-primary);">{{ item.MOD || '-' }}</strong>
                     </div>

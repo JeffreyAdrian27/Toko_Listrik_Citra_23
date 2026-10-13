@@ -204,17 +204,15 @@ export async function processSyncQueue() {
  */
 export async function searchLocalBarang(keyword, forSaleOnly = false) {
   if (!keyword || !keyword.trim()) return [];
-  const term = keyword.trim().toLowerCase();
+  const tokens = keyword.trim().toLowerCase().split(/\s+/).filter(Boolean);
   try {
     const all = await db.barang.toArray();
     return all.filter(b => {
       if (forSaleOnly && parseFloat(b.harga_jual || 0) <= 0) {
         return false;
       }
-      const matchNama = b.nama_barang && b.nama_barang.toLowerCase().includes(term);
-      const matchKode = b.kode_barang && b.kode_barang.toLowerCase().includes(term);
-      const matchMerk = b.merk && b.merk.toLowerCase().includes(term);
-      return matchNama || matchKode || matchMerk;
+      const combined = `${b.kode_barang || ''} ${b.nama_barang || ''} ${b.merk || ''}`.toLowerCase();
+      return tokens.every(tok => combined.includes(tok));
     }).slice(0, 30);
   } catch (err) {
     console.error('searchLocalBarang error:', err);

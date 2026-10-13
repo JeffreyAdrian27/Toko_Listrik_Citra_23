@@ -2,6 +2,7 @@ const pool = require('../config/db');
 const { logActivity } = require('./activityController');
 const { hargaToMod, modToHarga } = require('../utils/modHelper');
 const xlsx = require('xlsx');
+const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
 
@@ -123,8 +124,14 @@ const getAllBarang = async (req, res) => {
     const params = [];
 
     if (search) {
-      whereClause += ' AND (b.nama_barang LIKE ? OR b.kode_barang LIKE ? OR b.merk LIKE ?)';
-      params.push(search, search, search);
+      const rawSearch = req.query.search.trim();
+      const tokens = rawSearch.split(/\s+/).filter(Boolean);
+      if (tokens.length > 0) {
+        tokens.forEach(tok => {
+          whereClause += ` AND CONCAT_WS(' ', b.kode_barang, b.nama_barang, COALESCE(b.merk, ''), COALESCE(k.nama_kategori, '')) LIKE ?`;
+          params.push(`%${tok}%`);
+        });
+      }
     }
 
     if (kategoriId) {
@@ -137,7 +144,7 @@ const getAllBarang = async (req, res) => {
     }
 
     const [countResult] = await pool.execute(
-      `SELECT COUNT(*) as total FROM barang b ${whereClause}`,
+      `SELECT COUNT(*) as total FROM barang b LEFT JOIN kategori k ON b.kategori_id = k.id ${whereClause}`,
       params
     );
     const total = countResult[0].total;
@@ -203,19 +210,29 @@ const getBarangById = async (req, res) => {
 // Pegawai / Kasir Lookup (Read-only, MINIMAL, NO MOD per PRD FR-JUAL-8)
 const lookupBarang = async (req, res) => {
   try {
-    const search = req.query.search ? `%${req.query.search.trim()}%` : '%';
+    const rawSearch = req.query.search ? req.query.search.trim() : '';
+    const tokens = rawSearch ? rawSearch.split(/\s+/).filter(Boolean) : [];
+
+    let whereClause = 'WHERE b.deleted_at IS NULL AND b.harga_jual > 0';
+    const params = [];
+
+    if (tokens.length > 0) {
+      tokens.forEach(tok => {
+        whereClause += ` AND CONCAT_WS(' ', b.kode_barang, b.nama_barang, COALESCE(b.merk, ''), COALESCE(k.nama_kategori, '')) LIKE ?`;
+        params.push(`%${tok}%`);
+      });
+    }
+
     const [rows] = await pool.execute(`
       SELECT 
         b.id, b.kode_barang, b.nama_barang, b.merk,
         k.nama_kategori, b.stok_akhir, b.harga_jual
       FROM barang b
       LEFT JOIN kategori k ON b.kategori_id = k.id
-      WHERE b.deleted_at IS NULL 
-        AND b.harga_jual > 0
-        AND (b.nama_barang LIKE ? OR b.kode_barang LIKE ? OR b.merk LIKE ?)
+      ${whereClause}
       ORDER BY b.nama_barang ASC
       LIMIT 50
-    `, [search, search, search]);
+    `, params);
 
     return res.json({ data: rows });
   } catch (err) {
@@ -565,31 +582,119 @@ const deleteBarang = async (req, res) => {
   }
 };
 
-// Admin: Unduh Template Excel untuk input barang
+// Admin: Unduh Template Excel untuk input barang (Desain elegan persis screenshot tanpa TOTAL PEMBAYARAN)
 const downloadTemplateExcel = async (req, res) => {
   try {
-    const templatePath = path.resolve(__dirname, '../../Contoh Excel Toko Citra Listrik.xlsx');
-    if (fs.existsSync(templatePath)) {
-      return res.download(templatePath, 'Template_Barang_Toko_Citra_23.xlsx');
-    }
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Toko Listrik Citra 23';
+    workbook.lastModifiedBy = 'Toko Listrik Citra 23';
+    workbook.created = new Date();
+    workbook.modified = new Date();
 
-    // Fallback dinamis jika file asli tidak ada di direktori
-    const wb = xlsx.utils.book_new();
-    const wsData = [
-      ['REKAPAN BARANG MASUK -  BULANAN'],
-      ['PERIODE  : '],
-      ['TANGGAL', 'KATEGORI BARANG', 'NAMA BARANG', 'MERK', 'KODE BARANG', 'HARGA LAMA ', 'HARGA BARU MODAL SATUAN', 'JUMLAH MASUK ( SATUAN )', 'TOTAL PEMBAYARAN'],
-      ['2026-10-14', 'LAMPU VOSCO', 'lampu LED t-bulb vosco 20w neo capsule', 'Vosco', 'C23VOS01011', 'LC', '', 10, ''],
-      ['', 'PANASONIC', 'stop kontak tempel panasonic', 'Panasonic', 'C23PAN12008', 'CDS', 'CDL', 20, ''],
-      ['', 'FITTING', 'fitting lampu gantung karet waterproof', '', '', 'XT', 'X', 15, '']
+    const worksheet = workbook.addWorksheet('Sheet1', {
+      views: [{ showGridLines: true }]
+    });
+
+    // 1. Lebar Kolom (7 kolom tanpa KODE BARANG dan tanpa TOTAL PEMBAYARAN)
+    worksheet.columns = [
+      { key: 'tanggal', width: 16 },
+      { key: 'kategori', width: 25 },
+      { key: 'nama', width: 48 },
+      { key: 'merk', width: 18 },
+      { key: 'harga_lama', width: 18 },
+      { key: 'harga_baru', width: 28 },
+      { key: 'jumlah_masuk', width: 25 }
     ];
-    const ws = xlsx.utils.aoa_to_sheet(wsData);
-    xlsx.utils.book_append_sheet(wb, ws, 'Sheet1');
-    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // 2. Row 1: Banner Judul (Merged A1:G1)
+    worksheet.mergeCells('A1:G1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = 'REKAPAN BARANG MASUK -  BULANAN';
+    titleCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF000000' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(1).height = 36;
+
+    // 3. Row 2: Periode
+    const periodeCell = worksheet.getCell('A2');
+    periodeCell.value = 'PERIODE : ';
+    periodeCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF000000' } };
+    periodeCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    worksheet.getRow(2).height = 24;
+
+    // 4. Row 3: Header Kolom (Warna Biru Solid & Teks Putih Bold persis screenshot)
+    const headers = [
+      'TANGGAL',
+      'KATEGORI BARANG',
+      'NAMA BARANG',
+      'MERK',
+      'HARGA LAMA',
+      'HARGA BARU MODAL SATUAN',
+      'JUMLAH MASUK ( SATUAN )'
+    ];
+
+    const headerRow = worksheet.getRow(3);
+    headerRow.values = headers;
+    headerRow.height = 38;
+
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF2F6DB5' } // Warna biru solid persis screenshot
+      };
+      cell.font = {
+        name: 'Arial',
+        size: 10,
+        bold: true,
+        color: { argb: 'FFFFFFFF' } // Teks putih bold
+      };
+      cell.alignment = {
+        horizontal: 'center',
+        vertical: 'middle',
+        wrapText: true
+      };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF1A4E8A' } },
+        left: { style: 'thin', color: { argb: 'FF1A4E8A' } },
+        bottom: { style: 'thin', color: { argb: 'FF1A4E8A' } },
+        right: { style: 'thin', color: { argb: 'FF1A4E8A' } }
+      };
+    });
+
+    // 5. Data Contoh / Template
+    const sampleData = [
+      ['2026-10-14', 'LAMPU VOSCO', 'lampu LED t-bulb vosco 20w neo capsule', 'Vosco', 'LC', 'LT', 10],
+      ['', 'PANASONIC', 'stop kontak tempel panasonic', 'Panasonic', 'CDS', 'CDL', 20],
+      ['', 'FITTING', 'fitting lampu gantung karet waterproof', '', '-', 'X', 15]
+    ];
+
+    sampleData.forEach((rowValues) => {
+      const row = worksheet.addRow(rowValues);
+      row.height = 24;
+      row.eachCell((cell, colNumber) => {
+        cell.font = { name: 'Arial', size: 10 };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
+
+        if (colNumber === 3) {
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        } else if (colNumber === 2 || colNumber === 4) {
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        } else {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+      });
+    });
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="Template_Barang_Toko_Citra_23.xlsx"');
-    return res.send(buffer);
+
+    await workbook.xlsx.write(res);
+    return res.end();
   } catch (err) {
     console.error('downloadTemplateExcel error:', err);
     return res.status(500).json({ error: 'Gagal mengunduh template Excel.' });
