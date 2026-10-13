@@ -707,18 +707,19 @@ const searchItems = () => {
   }
   lookupTimeout = setTimeout(async () => {
     if (!isOnline.value) {
-      // Pencarian offline dari database lokal Dexie
-      searchResults.value = await searchLocalBarang(productSearch.value);
+      // Pencarian offline dari database lokal Dexie (khusus kasir: hanya barang dengan harga_jual > 0)
+      searchResults.value = await searchLocalBarang(productSearch.value, true);
       return;
     }
     try {
       const res = await api.get('/barang/lookup', {
         params: { search: productSearch.value }
       });
-      searchResults.value = res.data.data;
+      // Pastikan hanya barang dengan harga_jual > 0 yang ditampilkan di kasir
+      searchResults.value = (res.data.data || []).filter(item => parseFloat(item.harga_jual || 0) > 0);
     } catch (err) {
       console.warn('Pencarian server gagal, fallback ke database lokal:', err);
-      searchResults.value = await searchLocalBarang(productSearch.value);
+      searchResults.value = await searchLocalBarang(productSearch.value, true);
     }
   }, 250);
 };

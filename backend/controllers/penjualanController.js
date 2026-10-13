@@ -45,7 +45,14 @@ const createPenjualan = async (req, res) => {
       });
     }
 
-    const hargaJual = parseFloat(item.harga_jual);
+    const hargaJual = parseFloat(item.harga_jual || 0);
+    if (hargaJual <= 0) {
+      await connection.rollback();
+      return res.status(400).json({
+        error: `Barang [${item.nama_barang}] belum memiliki harga jual (Rp 0), tidak dapat dijual di kasir.`
+      });
+    }
+
     const modCode = item.MOD || '';
     const modalSatuan = item.modal_harga_beli && parseFloat(item.modal_harga_beli) > 0
       ? parseFloat(item.modal_harga_beli)

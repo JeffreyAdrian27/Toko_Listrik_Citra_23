@@ -266,8 +266,11 @@
               </td>
               <!-- Nilai Harga Baru Modal Satuan (Kode Huruf MOD) -->
               <td style="text-align: center;">
-                <span class="badge" style="background: #EBF3FF; color: #005CE6; font-family: monospace; font-weight: 800; font-size: 0.95rem; padding: 4px 12px; border: 1px solid var(--color-primary-border);">
-                  {{ row.harga_baru_modal_satuan }}
+                <span
+                  class="badge"
+                  :style="(row.harga_baru_modal_satuan && row.harga_baru_modal_satuan.trim() && row.harga_baru_modal_satuan !== '-') ? 'background: #EBF3FF; color: #005CE6; font-family: monospace; font-weight: 800; font-size: 0.95rem; padding: 4px 12px; border: 1px solid var(--color-primary-border);' : 'background: #F1F5F9; color: #475569; font-family: monospace; font-weight: 800; font-size: 0.95rem; padding: 4px 10px;'"
+                >
+                  {{ (row.harga_baru_modal_satuan && row.harga_baru_modal_satuan.trim()) ? row.harga_baru_modal_satuan : '-' }}
                 </span>
               </td>
               <td class="num" style="text-align: center; font-weight: 700; color: var(--status-success);">

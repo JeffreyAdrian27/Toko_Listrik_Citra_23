@@ -202,12 +202,15 @@ export async function processSyncQueue() {
 /**
  * 4. Pencarian barang lokal di DB Client (untuk Mode Offline)
  */
-export async function searchLocalBarang(keyword) {
+export async function searchLocalBarang(keyword, forSaleOnly = false) {
   if (!keyword || !keyword.trim()) return [];
   const term = keyword.trim().toLowerCase();
   try {
     const all = await db.barang.toArray();
     return all.filter(b => {
+      if (forSaleOnly && parseFloat(b.harga_jual || 0) <= 0) {
+        return false;
+      }
       const matchNama = b.nama_barang && b.nama_barang.toLowerCase().includes(term);
       const matchKode = b.kode_barang && b.kode_barang.toLowerCase().includes(term);
       const matchMerk = b.merk && b.merk.toLowerCase().includes(term);

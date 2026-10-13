@@ -1,6 +1,9 @@
 const pool = require('../config/db');
 const { logActivity } = require('./activityController');
 const { hargaToMod, modToHarga } = require('../utils/modHelper');
+const xlsx = require('xlsx');
+const path = require('path');
+const fs = require('fs');
 
 // Helper to generate prefix candidates based on brand name
 function generatePrefixCandidates(rawMerk) {
@@ -208,6 +211,7 @@ const lookupBarang = async (req, res) => {
       FROM barang b
       LEFT JOIN kategori k ON b.kategori_id = k.id
       WHERE b.deleted_at IS NULL 
+        AND b.harga_jual > 0
         AND (b.nama_barang LIKE ? OR b.kode_barang LIKE ? OR b.merk LIKE ?)
       ORDER BY b.nama_barang ASC
       LIMIT 50
@@ -351,6 +355,42 @@ const updateBarang = async (req, res) => {
       id
     ]);
 
+    // Sinkronkan perubahan ke tabel pembelian
+    const newHargaBaruMod = modCode || '-';
+    if (existing[0].nama_barang !== nama_barang.trim()) {
+      await pool.execute('UPDATE pembelian SET nama_barang = ? WHERE barang_id = ?', [nama_barang.trim(), id]);
+    }
+
+    const oldCost = parseFloat(existing[0].modal_harga_beli || 0);
+    if (oldCost !== unitCost || (existing[0].MOD || '') !== modCode) {
+      const [pembelianRows] = await pool.execute(
+        'SELECT id, jumlah_masuk, harga_baru_modal_satuan, total_pembayaran FROM pembelian WHERE barang_id = ? ORDER BY id DESC',
+        [id]
+      );
+
+      if (pembelianRows.length > 0) {
+        // 1. Update transaksi pembelian terakhir dengan harga beli baru
+        const lastRow = pembelianRows[0];
+        const newTotalLast = unitCost * (lastRow.jumlah_masuk || 0);
+        await pool.execute(
+          'UPDATE pembelian SET harga_baru_modal_satuan = ?, total_pembayaran = ? WHERE id = ?',
+          [newHargaBaruMod, newTotalLast, lastRow.id]
+        );
+
+        // 2. Jika ada transaksi pembelian sebelumnya yang harganya masih '-' atau Rp 0, ikut perbarui
+        for (let i = 1; i < pembelianRows.length; i++) {
+          const row = pembelianRows[i];
+          if (row.harga_baru_modal_satuan === '-' || row.harga_baru_modal_satuan === '' || parseFloat(row.total_pembayaran || 0) === 0) {
+            const newTotal = unitCost * (row.jumlah_masuk || 0);
+            await pool.execute(
+              'UPDATE pembelian SET harga_baru_modal_satuan = ?, total_pembayaran = ? WHERE id = ?',
+              [newHargaBaruMod, newTotal, row.id]
+            );
+          }
+        }
+      }
+    }
+
     // Catat log aktivitas (notifikasi lonceng)
     const changes = [];
     if (existing[0].nama_barang !== nama_barang.trim()) {
@@ -361,6 +401,9 @@ const updateBarang = async (req, res) => {
     }
     if (parseFloat(existing[0].harga_jual) !== parseFloat(harga_jual || 0)) {
       changes.push(`Harga: Rp ${parseFloat(existing[0].harga_jual || 0).toLocaleString('id-ID')} → Rp ${parseFloat(harga_jual || 0).toLocaleString('id-ID')}`);
+    }
+    if (oldCost !== unitCost) {
+      changes.push(`Modal Beli: Rp ${oldCost.toLocaleString('id-ID')} → Rp ${unitCost.toLocaleString('id-ID')}`);
     }
     if ((existing[0].MOD || '') !== modCode) {
       changes.push(`MOD: "${existing[0].MOD || '-'}" → "${modCode || '-'}"`);
@@ -522,6 +565,329 @@ const deleteBarang = async (req, res) => {
   }
 };
 
+// Admin: Unduh Template Excel untuk input barang
+const downloadTemplateExcel = async (req, res) => {
+  try {
+    const templatePath = path.resolve(__dirname, '../../Contoh Excel Toko Citra Listrik.xlsx');
+    if (fs.existsSync(templatePath)) {
+      return res.download(templatePath, 'Template_Barang_Toko_Citra_23.xlsx');
+    }
+
+    // Fallback dinamis jika file asli tidak ada di direktori
+    const wb = xlsx.utils.book_new();
+    const wsData = [
+      ['REKAPAN BARANG MASUK -  BULANAN'],
+      ['PERIODE  : '],
+      ['TANGGAL', 'KATEGORI BARANG', 'NAMA BARANG', 'MERK', 'KODE BARANG', 'HARGA LAMA ', 'HARGA BARU MODAL SATUAN', 'JUMLAH MASUK ( SATUAN )', 'TOTAL PEMBAYARAN'],
+      ['2026-10-14', 'LAMPU VOSCO', 'lampu LED t-bulb vosco 20w neo capsule', 'Vosco', 'C23VOS01011', 'LC', '', 10, ''],
+      ['', 'PANASONIC', 'stop kontak tempel panasonic', 'Panasonic', 'C23PAN12008', 'CDS', 'CDL', 20, ''],
+      ['', 'FITTING', 'fitting lampu gantung karet waterproof', '', '', 'XT', 'X', 15, '']
+    ];
+    const ws = xlsx.utils.aoa_to_sheet(wsData);
+    xlsx.utils.book_append_sheet(wb, ws, 'Sheet1');
+    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Template_Barang_Toko_Citra_23.xlsx"');
+    return res.send(buffer);
+  } catch (err) {
+    console.error('downloadTemplateExcel error:', err);
+    return res.status(500).json({ error: 'Gagal mengunduh template Excel.' });
+  }
+};
+
+// Admin: Import Barang Massal dari Excel dengan cek nama barang & update stok/MOD otomatis
+const importExcelBarang = async (req, res) => {
+  if (!req.file || !req.file.buffer) {
+    return res.status(400).json({ error: 'File Excel wajib diunggah.' });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'File Excel tidak memiliki lembar kerja (sheet).' });
+    }
+
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rawData = xlsx.utils.sheet_to_json(sheet, { header: 1 });
+
+    if (!rawData || rawData.length < 3) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Format data Excel terlalu pendek atau kosong.' });
+    }
+
+    // 1. Cari baris judul kolom (Header)
+    let headerRowIdx = -1;
+    for (let i = 0; i < rawData.length; i++) {
+      const row = rawData[i];
+      if (row && row.some(cell => String(cell || '').toUpperCase().includes('NAMA BARANG'))) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+
+    if (headerRowIdx === -1) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Kolom "NAMA BARANG" tidak ditemukan pada file Excel.' });
+    }
+
+    const headerRow = rawData[headerRowIdx].map(h => String(h || '').trim().toUpperCase());
+    const colTanggal = headerRow.findIndex(h => h.includes('TANGGAL'));
+    const colKategori = headerRow.findIndex(h => h.includes('KATEGORI'));
+    const colNama = headerRow.findIndex(h => h.includes('NAMA BARANG'));
+    const colMerk = headerRow.findIndex(h => h.includes('MERK'));
+    const colKode = headerRow.findIndex(h => h.includes('KODE BARANG'));
+    const colHargaLama = headerRow.findIndex(h => h.includes('HARGA LAMA'));
+    const colHargaBaru = headerRow.findIndex(h => h.includes('HARGA BARU'));
+    const colQty = headerRow.findIndex(h => h.includes('JUMLAH MASUK'));
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    let lastSeenDate = todayStr;
+
+    function parseExcelDate(val, fallback) {
+      if (!val) return fallback;
+      if (typeof val === 'number') {
+        const d = xlsx.SSF.parse_date_code(val);
+        if (d) {
+          const y = d.y;
+          const m = String(d.m).padStart(2, '0');
+          const day = String(d.d).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        }
+      }
+      const str = String(val).trim();
+      if (!str) return fallback;
+      if (!isNaN(str) && Number(str) > 30000) {
+        return parseExcelDate(Number(str), fallback);
+      }
+      const parsed = new Date(str);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toISOString().split('T')[0];
+      }
+      return fallback;
+    }
+
+    let createdCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const itemResults = [];
+
+    // Cache kategori agar query cepat
+    const categoryCache = new Map();
+    const [allCats] = await connection.execute('SELECT id, LOWER(TRIM(nama_kategori)) as name FROM kategori');
+    for (const c of allCats) {
+      categoryCache.set(c.name, c.id);
+    }
+
+    for (let i = headerRowIdx + 1; i < rawData.length; i++) {
+      const row = rawData[i];
+      if (!row || row.length === 0) continue;
+
+      const namaBarang = colNama !== -1 && row[colNama] ? String(row[colNama]).trim() : '';
+      if (!namaBarang) {
+        skippedCount++;
+        continue;
+      }
+
+      // 1. Tanggal
+      const rawDate = colTanggal !== -1 ? row[colTanggal] : null;
+      const parsedDate = parseExcelDate(rawDate, null);
+      if (parsedDate) {
+        lastSeenDate = parsedDate;
+      }
+      const finalDate = parsedDate || lastSeenDate;
+
+      // 2. Kategori
+      const rawKategori = colKategori !== -1 && row[colKategori] ? String(row[colKategori]).trim() : 'Umum';
+      const cleanCatName = rawKategori.toLowerCase();
+      let kategoriId = categoryCache.get(cleanCatName);
+      if (!kategoriId) {
+        const [catInsert] = await connection.execute(
+          'INSERT INTO kategori (nama_kategori) VALUES (?)',
+          [rawKategori]
+        );
+        kategoriId = catInsert.insertId;
+        categoryCache.set(cleanCatName, kategoriId);
+      }
+
+      // 3. Merk
+      const rawMerk = colMerk !== -1 && row[colMerk] ? String(row[colMerk]).trim() : '';
+
+      // 4. Sandi MOD & Modal
+      const rawHargaLama = colHargaLama !== -1 && row[colHargaLama] ? String(row[colHargaLama]).trim().toUpperCase() : '';
+      const rawHargaBaru = colHargaBaru !== -1 && row[colHargaBaru] ? String(row[colHargaBaru]).trim().toUpperCase() : '';
+
+      // 5. Qty Masuk
+      let qtyMasuk = 0;
+      if (colQty !== -1 && row[colQty] !== undefined && row[colQty] !== null) {
+        const parsedQty = parseInt(row[colQty], 10);
+        if (!isNaN(parsedQty) && parsedQty >= 0) {
+          qtyMasuk = parsedQty;
+        }
+      }
+
+      // Cek apakah barang sudah ada di database (hanya berdasarkan nama barang)
+      const [existing] = await connection.execute(
+        'SELECT id, kode_barang, nama_barang, merk, kategori_id, `MOD`, modal_harga_beli, harga_jual, stok_akhir, total_masuk FROM barang WHERE LOWER(TRIM(nama_barang)) = LOWER(TRIM(?)) AND deleted_at IS NULL LIMIT 1',
+        [namaBarang]
+      );
+
+      if (existing.length > 0) {
+        // SUDAH ADA: Update stok dan perbarui MOD
+        const item = existing[0];
+        const oldMod = item.MOD || '';
+        const oldModal = parseFloat(item.modal_harga_beli || 0);
+
+        // Prioritas MOD: HARGA BARU > HARGA LAMA > MOD eksisting
+        const hasHargaBaru = rawHargaBaru && rawHargaBaru !== '-';
+        const hasHargaLama = rawHargaLama && rawHargaLama !== '-';
+        const modBaru = hasHargaBaru ? rawHargaBaru : (hasHargaLama ? rawHargaLama : oldMod);
+        const modalBaru = modBaru ? (modToHarga(modBaru) || oldModal) : oldModal;
+
+        await connection.execute(`
+          UPDATE barang
+          SET 
+            \`MOD\` = ?,
+            modal_harga_beli = ?,
+            total_masuk = total_masuk + ?,
+            stok_akhir = stok_akhir + ?
+          WHERE id = ?
+        `, [modBaru, modalBaru, qtyMasuk, qtyMasuk, item.id]);
+
+        if (qtyMasuk > 0) {
+          const hargaLamaText = oldMod || (hasHargaLama ? rawHargaLama : '-');
+          const hargaBaruText = hasHargaBaru ? rawHargaBaru : '-';
+
+          await connection.execute(`
+            INSERT INTO pembelian (
+              barang_id, kode_barang, nama_barang, harga_lama,
+              harga_baru_modal_satuan, jumlah_masuk, total_pembayaran,
+              tanggal, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            item.id,
+            item.kode_barang,
+            item.nama_barang,
+            hargaLamaText,
+            hargaBaruText,
+            qtyMasuk,
+            modalBaru * qtyMasuk,
+            finalDate,
+            req.user.id
+          ]);
+        }
+
+        updatedCount++;
+        itemResults.push({
+          status: 'updated',
+          kode_barang: item.kode_barang,
+          nama_barang: item.nama_barang,
+          merk: item.merk || rawMerk,
+          stok_ditambah: qtyMasuk,
+          stok_akhir: item.stok_akhir + qtyMasuk,
+          mod_lama: oldMod,
+          mod_baru: modBaru
+        });
+      } else {
+        // BELUM ADA: Buat barang baru
+        const hasHargaBaru = rawHargaBaru && rawHargaBaru !== '-';
+        const hasHargaLama = rawHargaLama && rawHargaLama !== '-';
+        const activeMod = hasHargaBaru ? rawHargaBaru : (hasHargaLama ? rawHargaLama : '');
+        const modalSatuan = activeMod ? modToHarga(activeMod) : 0;
+        // Jika belum ada harga jual yang valid, default 0 (akan diberi tanda & disembunyikan dari penjualan)
+        const hargaJualAwal = 0;
+
+        // Kode barang selalu digenerate sesuai coding (tidak mengambil dari file Excel)
+        const kodeBarangFinal = await generateKodeBarang(connection, rawMerk);
+
+        const [insertRes] = await connection.execute(`
+          INSERT INTO barang (
+            kode_barang, nama_barang, kategori_id, merk,
+            stok_awal, total_masuk, total_keluar, stok_akhir,
+            \`MOD\`, harga_jual, modal_harga_beli
+          ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+        `, [
+          kodeBarangFinal,
+          namaBarang,
+          kategoriId,
+          rawMerk ? rawMerk.trim() : '',
+          qtyMasuk,
+          qtyMasuk,
+          qtyMasuk,
+          activeMod,
+          hargaJualAwal,
+          modalSatuan
+        ]);
+
+        const newId = insertRes.insertId;
+
+        if (qtyMasuk > 0) {
+          const hargaLamaText = hasHargaLama ? rawHargaLama : '-';
+          const hargaBaruText = hasHargaBaru ? rawHargaBaru : '-';
+
+          await connection.execute(`
+            INSERT INTO pembelian (
+              barang_id, kode_barang, nama_barang, harga_lama,
+              harga_baru_modal_satuan, jumlah_masuk, total_pembayaran,
+              tanggal, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            newId,
+            kodeBarangFinal,
+            namaBarang,
+            hargaLamaText,
+            hargaBaruText,
+            qtyMasuk,
+            modalSatuan * qtyMasuk,
+            finalDate,
+            req.user.id
+          ]);
+        }
+
+        createdCount++;
+        itemResults.push({
+          status: 'created',
+          kode_barang: kodeBarangFinal,
+          nama_barang: namaBarang,
+          merk: rawMerk,
+          stok_awal: qtyMasuk,
+          mod: activeMod
+        });
+      }
+    }
+
+    await connection.commit();
+
+    await logActivity({
+      tipe: 'pembelian',
+      judul: 'Import Excel Berhasil',
+      detail: `Import data Excel selesai: ${createdCount} barang baru ditambahkan, ${updatedCount} barang diupdate stok & MOD-nya.`
+    });
+
+    return res.json({
+      message: `Berhasil memproses ${itemResults.length} data barang dari Excel.`,
+      summary: {
+        total: itemResults.length,
+        created: createdCount,
+        updated: updatedCount,
+        skipped: skippedCount
+      },
+      data: itemResults
+    });
+  } catch (err) {
+    await connection.rollback();
+    console.error('importExcelBarang error:', err);
+    return res.status(500).json({ error: 'Gagal memproses file Excel: ' + (err.message || 'Terjadi kesalahan.') });
+  } finally {
+    connection.release();
+  }
+};
+
 module.exports = {
   getAllBarang,
   getBarangById,
@@ -529,5 +895,7 @@ module.exports = {
   createBarang,
   updateBarang,
   tambahStokBarang,
-  deleteBarang
+  deleteBarang,
+  downloadTemplateExcel,
+  importExcelBarang
 };

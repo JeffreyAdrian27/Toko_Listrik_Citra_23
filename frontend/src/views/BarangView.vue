@@ -6,10 +6,20 @@
           <Package :size="20" style="color: var(--color-primary);" />
           <h3 class="card-title">Inventaris & Stok Barang</h3>
         </div>
-        <button @click="openCreateModal" class="btn btn-primary btn-sm">
-          <Plus :size="16" />
-          <span>Tambah Barang Baru</span>
-        </button>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <!-- <button @click="downloadTemplate" class="btn btn-outline-primary btn-sm" title="Unduh Template Excel Toko Citra Listrik">
+            <Download :size="15" />
+            <span>Unduh Template</span>
+          </button> -->
+          <button @click="openImportModal" class="btn btn-sm" style="background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; font-weight: 600;" title="Upload Excel untuk Tambah & Update Stok Barang">
+            <Upload :size="15" />
+            <span>Import Excel</span>
+          </button>
+          <button @click="openCreateModal" class="btn btn-primary btn-sm">
+            <Plus :size="16" />
+            <span>Tambah Barang Baru</span>
+          </button>
+        </div>
       </div>
 
       <div class="card-body">
@@ -96,19 +106,31 @@
                   </span>
                 </td>
                 <td class="num" style="text-align: right;">
-                  <div style="font-weight: 700;" :style="{ color: isModalLebihTinggi(item) ? '#DC2626' : 'var(--color-primary)' }">
-                    Rp {{ formatNumber(item.harga_jual) }}
-                  </div>
-                  <!-- Warning jika Harga Beli (MOD) > Harga Jual -->
-                  <div
-                    v-if="isModalLebihTinggi(item)"
-                    class="badge"
-                    style="background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; font-size: 0.7rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 6px; border-radius: 4px;"
-                    :title="`Peringatan: Modal MOD (Rp ${formatNumber(item.modal_harga_beli)}) lebih tinggi dari Harga Jual (Rp ${formatNumber(item.harga_jual)})!`"
-                  >
-                    <AlertTriangle :size="12" />
-                    <span>MOD &gt; Jual (Rugi)</span>
-                  </div>
+                  <template v-if="parseFloat(item.harga_jual || 0) <= 0">
+                    <span
+                      class="badge"
+                      style="background: #FFFBEB; color: #D97706; border: 1px solid #FDE68A; font-size: 0.75rem; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 6px;"
+                      title="Harga jual belum ditentukan (Rp 0). Produk ini disembunyikan dari kasir/penjualan sampai harga diisi."
+                    >
+                      <AlertTriangle :size="12" />
+                      <span>Belum Diatur (Rp 0)</span>
+                    </span>
+                  </template>
+                  <template v-else>
+                    <div style="font-weight: 700;" :style="{ color: isModalLebihTinggi(item) ? '#DC2626' : 'var(--color-primary)' }">
+                      Rp {{ formatNumber(item.harga_jual) }}
+                    </div>
+                    <!-- Warning jika Harga Beli (MOD) > Harga Jual -->
+                    <div
+                      v-if="isModalLebihTinggi(item)"
+                      class="badge"
+                      style="background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; font-size: 0.7rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 6px; border-radius: 4px;"
+                      :title="`Peringatan: Modal MOD (Rp ${formatNumber(item.modal_harga_beli)}) lebih tinggi dari Harga Jual (Rp ${formatNumber(item.harga_jual)})!`"
+                    >
+                      <AlertTriangle :size="12" />
+                      <span>MOD &gt; Jual (Rugi)</span>
+                    </div>
+                  </template>
                 </td>
                 <td style="text-align: center;">
                   <span
@@ -250,16 +272,12 @@
                   step="100"
                   class="form-input num"
                   placeholder="Contoh: 54000"
-                  :disabled="!!editingId"
                 />
                 <p class="form-help">
-                  <span v-if="editingId" style="color: var(--text-muted);">
-                    Update modal lewat menu Pembelian.
-                  </span>
-                  <span v-else-if="itemForm.harga_beli > 0" style="color: #059669; font-weight: 600;">
+                  <span v-if="itemForm.harga_beli > 0" style="color: #059669; font-weight: 600;">
                     Rp {{ formatNumber(itemForm.harga_beli) }}
                   </span>
-                  <span v-else>Modal kulakan satuan awal.</span>
+                  <span v-else>Modal kulakan satuan produk.</span>
                 </p>
               </div>
 
@@ -339,6 +357,127 @@
       </div>
     </div>
 
+    <!-- Modal Import Excel -->
+    <div v-if="showImportModal" class="modal-backdrop" @click.self="closeImportModal">
+      <div class="modal-content" style="max-width: 650px;">
+        <div class="modal-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <FileSpreadsheet :size="20" style="color: #10B981;" />
+            <h3 style="margin: 0; font-size: 1.15rem;">Import Barang dari Excel</h3>
+          </div>
+          <button @click="closeImportModal" class="btn btn-sm btn-secondary" style="padding: 4px 8px;">
+            <X :size="16" />
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Petunjuk dan Info Box -->
+          <div style="background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 14px 16px; margin-bottom: 18px; font-size: 0.85rem; color: #166534; line-height: 1.5;">
+            <div style="font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+              <span>Cara Kerja Sistem Import Otomatis:</span>
+            </div>
+            <ul style="margin: 0; padding-left: 18px;">
+              <li>Sistem akan memeriksa <strong>Nama Barang</strong> pada file Excel.</li>
+              <li><strong>Jika nama barang sudah ada</strong>: Stok barang akan otomatis ditambahkan dan sandi MOD diperbarui jika ada perubahan harga.</li>
+              <li><strong>Jika barang belum ada</strong>: Barang baru otomatis dibuat dengan kode barang terstandar Toko Citra 23.</li>
+              <li>Riwayat pasokan masuk otomatis tercatat rapi pada menu Pembelian.</li>
+            </ul>
+          </div>
+
+          <!-- Tombol Download Template -->
+          <div style="display: flex; justify-content: space-between; align-items: center; background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+            <div>
+              <div style="font-weight: 600; font-size: 0.875rem; color: var(--text-main);">Belum punya template Excel?</div>
+              <div style="font-size: 0.775rem; color: var(--text-muted);">Gunakan format Excel standar Toko Citra Listrik</div>
+            </div>
+            <button @click="downloadTemplate" class="btn btn-outline-primary btn-sm">
+              <Download :size="14" />
+              <span>Unduh Template Excel</span>
+            </button>
+          </div>
+
+          <!-- File Upload Zone -->
+          <div
+            class="import-dropzone"
+            :class="{ active: isDragging, 'has-file': !!selectedExcelFile }"
+            @dragover.prevent="isDragging = true"
+            @dragleave.prevent="isDragging = false"
+            @drop.prevent="onFileDrop"
+            @click="triggerFileInput"
+            style="border: 2px dashed #94A3B8; border-radius: 10px; padding: 28px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #FAFAFA;"
+          >
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept=".xlsx, .xls"
+              style="display: none;"
+              @change="onFileSelected"
+            />
+            <div v-if="!selectedExcelFile">
+              <FileSpreadsheet :size="36" style="color: #64748B; margin-bottom: 10px;" />
+              <div style="font-weight: 600; color: var(--text-main); font-size: 0.95rem;">
+                Pilih atau seret file Excel ke sini (.xlsx / .xls)
+              </div>
+              <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                Maksimal ukuran file: 10 MB
+              </div>
+            </div>
+            <div v-else style="display: flex; align-items: center; justify-content: center; gap: 12px;">
+              <FileSpreadsheet :size="32" style="color: #10B981;" />
+              <div style="text-align: left;">
+                <div style="font-weight: 700; color: #0F172A; font-size: 0.95rem;">{{ selectedExcelFile.name }}</div>
+                <div style="font-size: 0.8rem; color: #64748B;">{{ (selectedExcelFile.size / 1024).toFixed(1) }} KB</div>
+              </div>
+              <button @click.stop="clearSelectedFile" class="btn btn-sm btn-secondary" style="margin-left: 12px; padding: 4px 8px;">
+                Ganti
+              </button>
+            </div>
+          </div>
+
+          <!-- Error Alert -->
+          <div v-if="importError" class="badge badge-danger" style="display: block; margin-top: 14px; padding: 10px; text-align: left; font-size: 0.85rem;">
+            {{ importError }}
+          </div>
+
+          <!-- Success Summary Alert -->
+          <div v-if="importSummary" style="margin-top: 16px; background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 8px; padding: 14px 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; color: #15803D; font-weight: 700; font-size: 0.95rem; margin-bottom: 8px;">
+              <CheckCircle2 :size="18" />
+              <span>{{ importSuccessMessage }}</span>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
+              <span class="badge badge-success" style="padding: 6px 12px; font-size: 0.8rem;">
+                {{ importSummary.created }} Barang Baru Dibuat
+              </span>
+              <span class="badge badge-blue" style="padding: 6px 12px; font-size: 0.8rem;">
+                {{ importSummary.updated }} Barang Ditambah Stok &amp; MOD
+              </span>
+              <span v-if="importSummary.skipped" class="badge" style="background: #E2E8F0; color: #475569; padding: 6px 12px; font-size: 0.8rem;">
+                {{ importSummary.skipped }} Baris Dilewati (Kosong)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" @click="closeImportModal" class="btn btn-secondary">
+            {{ importSummary ? 'Tutup' : 'Batal' }}
+          </button>
+          <button
+            v-if="!importSummary"
+            type="button"
+            @click="submitImportExcel"
+            class="btn btn-primary"
+            :disabled="!selectedExcelFile || importLoading"
+            style="background: #059669; border-color: #059669;"
+          >
+            <Upload :size="15" />
+            <span>{{ importLoading ? 'Memproses Import...' : 'Mulai Import Excel' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
 
   </AppLayout>
 </template>
@@ -360,7 +499,11 @@ import {
   Edit2,
   Trash2,
   AlertTriangle,
-  X
+  X,
+  Download,
+  Upload,
+  FileSpreadsheet,
+  CheckCircle2
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -429,6 +572,18 @@ const itemForm = reactive({
 const onItemHargaBeliInput = () => {
   if (itemForm.harga_beli > 0) {
     itemForm.MOD = hargaToMod(itemForm.harga_beli);
+  } else {
+    itemForm.MOD = '';
+  }
+};
+
+const onItemModInput = () => {
+  if (itemForm.MOD && itemForm.MOD.trim()) {
+    itemForm.MOD = itemForm.MOD.toUpperCase();
+    const calculated = modToHarga(itemForm.MOD);
+    if (calculated > 0) {
+      itemForm.harga_beli = calculated;
+    }
   }
 };
 
@@ -568,8 +723,8 @@ const openEditModal = (item) => {
   itemForm.nama_barang = item.nama_barang;
   itemForm.kategori_id = item.kategori_id;
   itemForm.merk = item.merk;
-  itemForm.harga_beli = item.modal_harga_beli ? parseFloat(item.modal_harga_beli) : modToHarga(item.MOD || '');
-  itemForm.MOD = item.MOD || '';
+  itemForm.harga_beli = item.modal_harga_beli ? parseFloat(item.modal_harga_beli) : (item.MOD ? modToHarga(item.MOD) : 0);
+  itemForm.MOD = item.MOD || (itemForm.harga_beli > 0 ? hargaToMod(itemForm.harga_beli) : '');
   itemForm.harga_jual = Number(item.harga_jual);
   itemForm.keterangan = item.keterangan || '';
   itemModalError.value = '';
@@ -590,6 +745,8 @@ const saveBarang = async () => {
         nama_barang: itemForm.nama_barang,
         kategori_id: itemForm.kategori_id,
         merk: itemForm.merk,
+        modal_harga_beli: itemForm.harga_beli,
+        MOD: itemForm.MOD,
         harga_jual: itemForm.harga_jual,
         keterangan: itemForm.keterangan
       });
@@ -604,7 +761,7 @@ const saveBarang = async () => {
       const cleanMerk = itemForm.merk ? itemForm.merk.trim().replace(/[^a-zA-Z]/g, '').toUpperCase() : '';
       let merkPrefix = 'NN';
       if (cleanMerk) {
-        merkPrefix = (cleanMerk === 'DEXCOM' || cleanMerk.startsWith('DEXCOM')) ? 'DXC' : cleanMerk.substring(0, 3);
+        merkPrefix = cleanMerk.length >= 3 ? cleanMerk.substring(0, 3) : cleanMerk.padEnd(3, 'X');
       }
       const newKode = 'C23' + merkPrefix + Math.floor(10000 + Math.random() * 90000);
       await db.barang.add({
@@ -707,6 +864,115 @@ const confirmDelete = async (item) => {
       }
       alert(err.response?.data?.error || 'Gagal menghapus barang.');
     }
+  }
+};
+
+// State & Methods Import Excel
+const showImportModal = ref(false);
+const selectedExcelFile = ref(null);
+const fileInputRef = ref(null);
+const isDragging = ref(false);
+const importLoading = ref(false);
+const importError = ref('');
+const importSummary = ref(null);
+const importSuccessMessage = ref('');
+
+const openImportModal = () => {
+  selectedExcelFile.value = null;
+  importError.value = '';
+  importSummary.value = null;
+  importSuccessMessage.value = '';
+  showImportModal.value = true;
+};
+
+const closeImportModal = () => {
+  showImportModal.value = false;
+  if (importSummary.value) {
+    fetchBarang();
+  }
+};
+
+const triggerFileInput = () => {
+  if (fileInputRef.value) fileInputRef.value.click();
+};
+
+const onFileSelected = (e) => {
+  const files = e.target.files;
+  if (files && files.length > 0) {
+    selectedExcelFile.value = files[0];
+    importError.value = '';
+  }
+};
+
+const onFileDrop = (e) => {
+  isDragging.value = false;
+  const files = e.dataTransfer.files;
+  if (files && files.length > 0) {
+    const file = files[0];
+    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+      selectedExcelFile.value = file;
+      importError.value = '';
+    } else {
+      importError.value = 'Harap unggah file dengan format Excel (.xlsx atau .xls).';
+    }
+  }
+};
+
+const clearSelectedFile = () => {
+  selectedExcelFile.value = null;
+  if (fileInputRef.value) fileInputRef.value.value = '';
+};
+
+const downloadTemplate = async () => {
+  try {
+    const response = await api.get('/barang/template-excel', {
+      responseType: 'blob'
+    });
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'Template_Barang_Toko_Citra_23.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Download template error:', err);
+    alert('Gagal mengunduh template Excel.');
+  }
+};
+
+const submitImportExcel = async () => {
+  if (!selectedExcelFile.value) return;
+
+  importLoading.value = true;
+  importError.value = '';
+  importSummary.value = null;
+
+  try {
+    const formData = new FormData();
+    formData.append('file', selectedExcelFile.value);
+
+    const res = await api.post('/barang/import-excel', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+
+    importSummary.value = res.data.summary;
+    importSuccessMessage.value = res.data.message;
+
+    // Refresh data barang dan kategori
+    fetchCategories();
+    fetchBarang();
+  } catch (err) {
+    console.error('Import excel error:', err);
+    importError.value = err.response?.data?.error || 'Gagal memproses file Excel.';
+  } finally {
+    importLoading.value = false;
   }
 };
 
