@@ -128,7 +128,7 @@ const getAllBarang = async (req, res) => {
       const tokens = rawSearch.split(/\s+/).filter(Boolean);
       if (tokens.length > 0) {
         tokens.forEach(tok => {
-          whereClause += ` AND CONCAT_WS(' ', b.kode_barang, b.nama_barang, COALESCE(b.merk, ''), COALESCE(k.nama_kategori, '')) LIKE ?`;
+          whereClause += ` AND CONCAT_WS(' ', b.kode_barang, COALESCE(b.barcode, ''), b.nama_barang, COALESCE(b.merk, ''), COALESCE(k.nama_kategori, '')) LIKE ?`;
           params.push(`%${tok}%`);
         });
       }
@@ -151,7 +151,7 @@ const getAllBarang = async (req, res) => {
 
     const query = `
       SELECT 
-        b.id, b.kode_barang, b.nama_barang, b.kategori_id, k.nama_kategori,
+        b.id, b.kode_barang, b.barcode, b.nama_barang, b.kategori_id, k.nama_kategori,
         b.merk, b.stok_awal, b.total_masuk, b.total_keluar, b.stok_akhir,
         b.\`MOD\`, 
         b.modal_harga_beli,
@@ -186,7 +186,7 @@ const getBarangById = async (req, res) => {
     const { id } = req.params;
     const [rows] = await pool.query(`
       SELECT 
-        b.id, b.kode_barang, b.nama_barang, b.kategori_id, k.nama_kategori,
+        b.id, b.kode_barang, b.barcode, b.nama_barang, b.kategori_id, k.nama_kategori,
         b.merk, b.stok_awal, b.total_masuk, b.total_keluar, b.stok_akhir,
         b.\`MOD\`, 
         b.modal_harga_beli,
@@ -218,14 +218,14 @@ const lookupBarang = async (req, res) => {
 
     if (tokens.length > 0) {
       tokens.forEach(tok => {
-        whereClause += ` AND CONCAT_WS(' ', b.kode_barang, b.nama_barang, COALESCE(b.merk, ''), COALESCE(k.nama_kategori, '')) LIKE ?`;
+        whereClause += ` AND CONCAT_WS(' ', b.kode_barang, COALESCE(b.barcode, ''), b.nama_barang, COALESCE(b.merk, ''), COALESCE(k.nama_kategori, '')) LIKE ?`;
         params.push(`%${tok}%`);
       });
     }
 
     const [rows] = await pool.execute(`
       SELECT 
-        b.id, b.kode_barang, b.nama_barang, b.merk,
+        b.id, b.kode_barang, b.barcode, b.nama_barang, b.merk,
         k.nama_kategori, b.stok_akhir, b.harga_jual
       FROM barang b
       LEFT JOIN kategori k ON b.kategori_id = k.id
@@ -241,10 +241,44 @@ const lookupBarang = async (req, res) => {
   }
 };
 
+// Check if barcode or code exists (Admin & Pegawai)
+const checkBarcode = async (req, res) => {
+  try {
+    const rawBarcode = req.params.barcode ? req.params.barcode.trim() : '';
+    if (!rawBarcode) {
+      return res.status(400).json({ error: 'Barcode tidak boleh kosong.' });
+    }
+
+    const isAdmin = req.user && req.user.role === 'admin';
+    const selectFields = isAdmin
+      ? 'b.id, b.kode_barang, b.barcode, b.nama_barang, b.kategori_id, k.nama_kategori, b.merk, b.stok_akhir, b.harga_jual, b.`MOD`, b.modal_harga_beli, b.keterangan'
+      : 'b.id, b.kode_barang, b.barcode, b.nama_barang, b.kategori_id, k.nama_kategori, b.merk, b.stok_akhir, b.harga_jual';
+
+    const [rows] = await pool.execute(
+      `SELECT ${selectFields}
+       FROM barang b
+       LEFT JOIN kategori k ON b.kategori_id = k.id
+       WHERE (b.barcode = ? OR b.kode_barang = ?) AND b.deleted_at IS NULL
+       LIMIT 1`,
+      [rawBarcode, rawBarcode]
+    );
+
+    if (rows.length > 0) {
+      return res.json({ exists: true, barang: rows[0] });
+    }
+
+    return res.json({ exists: false, barang: null });
+  } catch (err) {
+    console.error('checkBarcode error:', err);
+    return res.status(500).json({ error: 'Gagal memeriksa barcode.' });
+  }
+};
+
 // Admin: Create Barang (MOD string code)
 const createBarang = async (req, res) => {
   const {
     nama_barang,
+    barcode,
     kategori_id,
     merk,
     stok_awal = 0,
@@ -261,6 +295,7 @@ const createBarang = async (req, res) => {
     return res.status(400).json({ error: 'Kategori wajib dipilih.' });
   }
 
+  const rawBarcode = barcode ? String(barcode).trim() : null;
   const initialStock = parseInt(stok_awal || 0, 10);
   const sellPrice = parseFloat(harga_jual || 0);
   const hargaBeliNum = parseFloat(harga_beli || 0);
@@ -275,6 +310,20 @@ const createBarang = async (req, res) => {
   try {
     await connection.beginTransaction();
 
+    // Cek duplikasi barcode jika diisi
+    if (rawBarcode) {
+      const [dup] = await connection.execute(
+        'SELECT id, nama_barang, kode_barang FROM barang WHERE (barcode = ? OR kode_barang = ?) AND deleted_at IS NULL LIMIT 1',
+        [rawBarcode, rawBarcode]
+      );
+      if (dup.length > 0) {
+        await connection.rollback();
+        return res.status(400).json({
+          error: `Barcode "${rawBarcode}" sudah digunakan oleh barang [${dup[0].kode_barang}] ${dup[0].nama_barang}.`
+        });
+      }
+    }
+
     const kode_barang = await generateKodeBarang(connection, merk);
     const stok_akhir = initialStock;
 
@@ -282,12 +331,13 @@ const createBarang = async (req, res) => {
 
     const [result] = await connection.execute(`
       INSERT INTO barang (
-        kode_barang, nama_barang, kategori_id, merk,
+        kode_barang, barcode, nama_barang, kategori_id, merk,
         stok_awal, total_masuk, total_keluar, stok_akhir,
         \`MOD\`, harga_jual, modal_harga_beli, keterangan
-      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)
     `, [
       kode_barang,
+      rawBarcode,
       nama_barang.trim(),
       kategori_id,
       merk ? merk.trim() : '',
@@ -313,6 +363,7 @@ const createBarang = async (req, res) => {
       data: {
         id: result.insertId,
         kode_barang,
+        barcode: rawBarcode,
         nama_barang: nama_barang.trim(),
         MOD: modCode
       }
@@ -331,6 +382,7 @@ const updateBarang = async (req, res) => {
   const { id } = req.params;
   const {
     nama_barang,
+    barcode,
     kategori_id,
     merk,
     MOD = '',
@@ -343,6 +395,7 @@ const updateBarang = async (req, res) => {
     return res.status(400).json({ error: 'Nama barang wajib diisi.' });
   }
 
+  const rawBarcode = barcode !== undefined ? (String(barcode).trim() || null) : undefined;
   const hargaBeliNum = parseFloat(harga_beli || 0);
   let modCode = String(MOD || '').trim().toUpperCase();
   if (hargaBeliNum > 0) {
@@ -355,14 +408,29 @@ const updateBarang = async (req, res) => {
       return res.status(404).json({ error: 'Barang tidak ditemukan.' });
     }
 
+    // Cek duplikasi barcode jika diubah
+    const finalBarcode = rawBarcode !== undefined ? rawBarcode : existing[0].barcode;
+    if (finalBarcode) {
+      const [dup] = await pool.execute(
+        'SELECT id, nama_barang, kode_barang FROM barang WHERE (barcode = ? OR kode_barang = ?) AND id != ? AND deleted_at IS NULL LIMIT 1',
+        [finalBarcode, finalBarcode, id]
+      );
+      if (dup.length > 0) {
+        return res.status(400).json({
+          error: `Barcode "${finalBarcode}" sudah digunakan oleh barang [${dup[0].kode_barang}] ${dup[0].nama_barang}.`
+        });
+      }
+    }
+
     const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modCode);
 
     await pool.execute(`
       UPDATE barang
-      SET nama_barang = ?, kategori_id = ?, merk = ?, \`MOD\` = ?, harga_jual = ?, modal_harga_beli = ?, keterangan = ?
+      SET nama_barang = ?, barcode = ?, kategori_id = ?, merk = ?, \`MOD\` = ?, harga_jual = ?, modal_harga_beli = ?, keterangan = ?
       WHERE id = ?
     `, [
       nama_barang.trim(),
+      finalBarcode,
       kategori_id,
       merk ? merk.trim() : '',
       modCode,
@@ -997,6 +1065,7 @@ module.exports = {
   getAllBarang,
   getBarangById,
   lookupBarang,
+  checkBarcode,
   createBarang,
   updateBarang,
   tambahStokBarang,

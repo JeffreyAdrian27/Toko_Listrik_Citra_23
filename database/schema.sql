@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS barang (
   id INT AUTO_INCREMENT PRIMARY KEY,
   `MOD` VARCHAR(20) NOT NULL DEFAULT '',
   kode_barang VARCHAR(30) NOT NULL UNIQUE,
+  barcode VARCHAR(50) NULL,
   nama_barang VARCHAR(150) NOT NULL,
   kategori_id INT NOT NULL,
   merk VARCHAR(100) NULL DEFAULT '',
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS barang (
   deleted_at TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_kode_barang (kode_barang),
+  INDEX idx_barcode (barcode),
   INDEX idx_kategori (kategori_id),
   CONSTRAINT fk_barang_kategori FOREIGN KEY (kategori_id) REFERENCES kategori(id) ON UPDATE CASCADE
 ) ENGINE=InnoDB;

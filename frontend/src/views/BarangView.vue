@@ -32,7 +32,7 @@
               @input="onSearchChange"
               type="text"
               class="form-input"
-              placeholder="Cari kode, nama barang, merk..."
+              placeholder="Cari barcode, kode, nama barang, merk..."
             />
           </div>
 
@@ -67,7 +67,7 @@
           <table class="table">
             <thead>
               <tr>
-                <th>Kode</th>
+                <th>Kode & Barcode</th>
                 <th>Nama Produk & Merk</th>
                 <th>Kategori</th>
                 <th style="text-align: center; width: 100px;">MOD</th>
@@ -84,6 +84,16 @@
               >
                 <td>
                   <span class="badge badge-blue" style="font-weight: 700;">{{ item.kode_barang }}</span>
+                  <div v-if="item.barcode" style="margin-top: 4px;">
+                    <span
+                      class="badge"
+                      style="background: #F1F5F9; color: #334155; border: 1px solid #CBD5E1; font-size: 0.72rem; font-family: monospace; display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;"
+                      :title="`Barcode EAN/QR: ${item.barcode}`"
+                    >
+                      <Barcode :size="12" class="barcode-icon-desktop" />
+                      <span>{{ item.barcode }}</span>
+                    </span>
+                  </div>
                 </td>
                 <td>
                   <div style="font-weight: 600; color: var(--text-main);">{{ item.nama_barang }}</div>
@@ -150,7 +160,7 @@
                       title="Input Pembelian & Tambah Stok"
                     >
                       <PlusCircle :size="14" />
-                      <span>+ Stok</span>
+                      <span>Stok</span>
                     </button>
                     <!-- Edit Barang -->
                     <button @click="openEditModal(item)" class="btn btn-sm btn-secondary" title="Edit Data Barang">
@@ -222,6 +232,98 @@
               {{ itemModalError }}
             </div>
 
+            <!-- Barcode Field & Scanner Button -->
+            <div class="form-group" style="background: #F8FAFC; border: 1px solid #E2E8F0; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                <label class="form-label" for="barcode" style="margin-bottom: 0; display: flex; align-items: center; gap: 6px; font-weight: 700;">
+                  <Barcode :size="18" class="barcode-icon-desktop" style="color: var(--color-primary);" />
+                  <span>Barcode Produk (EAN / QR / Scan HP)</span>
+                </label>
+                <button
+                  type="button"
+                  @click="toggleCameraScanner"
+                  class="btn btn-sm"
+                  :style="isScannerActive ? 'background: #EF4444; color: #FFF; border: none;' : 'background: #EEF2FF; color: #4F46E5; border: 1px solid #C7D2FE;'"
+                  style="padding: 4px 10px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; border-radius: 6px;"
+                  title="Gunakan webcam bawaan laptop/PC"
+                >
+                  <Camera :size="14" />
+                  <span>{{ isScannerActive ? 'Tutup Kamera' : 'Scan Barcode' }}</span>
+                </button>
+              </div>
+
+              <!-- Viewfinder HTML5-QRCode jika scanner kamera aktif -->
+              <div v-if="isScannerActive" style="margin: 10px 0; padding: 10px; background: #0F172A; border-radius: 8px; text-align: center;">
+                <div style="font-size: 0.75rem; color: #94A3B8; margin-bottom: 6px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                  <ScanLine :size="14" style="color: #38BDF8;" />
+                  Arahkan barcode ke kamera
+                </div>
+                <div id="barcode-reader-viewfinder" style="width: 100%; max-width: 380px; margin: 0 auto; border-radius: 6px; overflow: hidden; background: #000; min-height: 200px;"></div>
+              </div>
+
+              <div style="position: relative;">
+                <input
+                  id="barcode"
+                  ref="barcodeInputRef"
+                  v-model="itemForm.barcode"
+                  @input="onBarcodeInputChange"
+                  @keydown.enter.prevent="onBarcodeEnterKey"
+                  type="text"
+                  class="form-input"
+                  placeholder="Kursor siap menerima barcode dari HP / ketik manual..."
+                  style="font-family: monospace; font-size: 0.95rem; letter-spacing: 0.05em; padding-right: 32px;"
+                />
+                <button
+                  v-if="itemForm.barcode"
+                  type="button"
+                  @click="clearBarcode"
+                  style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #94A3B8; padding: 2px;"
+                  title="Hapus barcode"
+                >
+                  <X :size="14" />
+                </button>
+              </div>
+
+              <div v-if="barcodeChecking" style="font-size: 0.75rem; color: #64748B; margin-top: 5px;">
+                Memeriksa ketersediaan barcode...
+              </div>
+              <div
+                v-else-if="barcodeScanSuccess && !barcodeCheckWarning"
+                style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px; padding: 6px 12px; background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 6px; color: #065F46; font-size: 0.8rem; font-weight: 600;"
+              >
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <CheckCircle2 :size="15" style="color: #059669;" />
+                  <span>Barcode <strong>{{ barcodeScanSuccess }}</strong> berhasil masuk!</span>
+                </div>
+                <button type="button" @click="barcodeScanSuccess = ''" style="background: none; border: none; cursor: pointer; color: #059669; font-size: 0.8rem; padding: 0 4px;">
+                  ✕
+                </button>
+              </div>
+              <div
+                v-else-if="barcodeCheckWarning"
+                class="badge badge-danger"
+                style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 6px; padding: 8px 12px; border-radius: 6px; font-size: 0.78rem; text-align: left;"
+              >
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <AlertTriangle :size="15" style="flex-shrink: 0;" />
+                  <span>{{ barcodeCheckWarning }}</span>
+                </div>
+                <div v-if="existingBarangInfo && !editingId" style="margin-top: 4px;">
+                  <button
+                    type="button"
+                    @click="loadExistingBarangData"
+                    class="btn btn-sm"
+                    style="background: #FFF; color: #DC2626; border: 1px solid #FECACA; padding: 3px 8px; font-size: 0.75rem; font-weight: 700; border-radius: 4px;"
+                  >
+                    Buka Data Barang Ini Untuk Edit / Tambah Stok
+                  </button>
+                </div>
+              </div>
+              <!-- <p v-else class="form-help" style="margin-top: 5px; margin-bottom: 0; color: #475569; font-size: 0.78rem;">
+                📱 <strong>Jika scan pakai HP (Barcode to PC):</strong> Tidak perlu tekan tombol kamera laptop di atas. Cukup arahkan HP ke barcode barang, angkanya akan otomatis terketik di sini.
+              </p> -->
+            </div>
+
             <div class="form-group">
               <label class="form-label" for="nama_barang">Nama Barang</label>
               <input
@@ -234,7 +336,7 @@
               />
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
               <div class="form-group">
                 <label class="form-label" for="kategori_id">Kategori</label>
                 <select id="kategori_id" v-model="itemForm.kategori_id" class="form-select" required>
@@ -259,7 +361,7 @@
               </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+            <div class="form-grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
               <!-- Input Harga Beli / Modal (Rp) -->
               <div class="form-group">
                 <label class="form-label" for="harga_beli">Harga Beli / Modal (Rp)</label>
@@ -483,8 +585,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
@@ -503,7 +606,10 @@ import {
   Download,
   Upload,
   FileSpreadsheet,
-  CheckCircle2
+  CheckCircle2,
+  Barcode,
+  Camera,
+  ScanLine
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -558,7 +664,232 @@ const showItemModal = ref(false);
 const editingId = ref(null);
 const itemSaving = ref(false);
 const itemModalError = ref('');
+const barcodeInputRef = ref(null);
+const isScannerActive = ref(false);
+let html5QrScannerInstance = null;
+const barcodeChecking = ref(false);
+const barcodeCheckWarning = ref('');
+const barcodeScanSuccess = ref('');
+const existingBarangInfo = ref(null);
+let barcodeCheckTimeout = null;
+let isScanningBusy = false;
+
+const playScanBeep = () => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch (e) {
+    // Audio context may require user gesture on some browsers
+  }
+};
+
+const checkBarcodeDuplicate = async (code) => {
+  const trimmed = (code || '').trim();
+  if (!trimmed) {
+    barcodeCheckWarning.value = '';
+    existingBarangInfo.value = null;
+    return;
+  }
+  barcodeChecking.value = true;
+  try {
+    const res = await api.get(`/barang/check-barcode/${encodeURIComponent(trimmed)}`);
+    if (res.data && res.data.exists && res.data.barang) {
+      existingBarangInfo.value = res.data.barang;
+      const b = res.data.barang;
+      if (!editingId.value) {
+        // Otomatis isi nama barang, kategori, merk, harga beli (modal), MOD, dan harga jual jika sudah terdaftar
+        itemForm.nama_barang = b.nama_barang;
+        if (b.kategori_id) itemForm.kategori_id = b.kategori_id;
+        itemForm.merk = b.merk || '';
+        const modalNum = b.modal_harga_beli ? parseFloat(b.modal_harga_beli) : (b.MOD ? modToHarga(b.MOD) : 0);
+        itemForm.harga_beli = modalNum;
+        itemForm.MOD = b.MOD || (modalNum > 0 ? hargaToMod(modalNum) : '');
+        itemForm.harga_jual = Number(b.harga_jual || 0);
+        itemForm.keterangan = b.keterangan || '';
+        editingId.value = b.id;
+        barcodeScanSuccess.value = `Barang ditemukan: [${b.kode_barang}] ${b.nama_barang} (data otomatis terisi)`;
+        barcodeCheckWarning.value = '';
+      } else if (Number(editingId.value) === Number(b.id)) {
+        barcodeCheckWarning.value = '';
+      } else {
+        barcodeCheckWarning.value = `⚠️ Barcode "${trimmed}" sudah terdaftar pada [${b.kode_barang}] ${b.nama_barang}!`;
+      }
+    } else {
+      barcodeCheckWarning.value = '';
+      existingBarangInfo.value = null;
+    }
+  } catch (err) {
+    console.warn('Gagal cek barcode:', err);
+    barcodeCheckWarning.value = '';
+    existingBarangInfo.value = null;
+  } finally {
+    barcodeChecking.value = false;
+  }
+};
+
+const loadExistingBarangData = () => {
+  if (!existingBarangInfo.value) return;
+  const b = existingBarangInfo.value;
+  itemForm.nama_barang = b.nama_barang;
+  if (b.kategori_id) itemForm.kategori_id = b.kategori_id;
+  itemForm.merk = b.merk || '';
+  const modalNum = b.modal_harga_beli ? parseFloat(b.modal_harga_beli) : (b.MOD ? modToHarga(b.MOD) : 0);
+  itemForm.harga_beli = modalNum;
+  itemForm.MOD = b.MOD || (modalNum > 0 ? hargaToMod(modalNum) : '');
+  itemForm.harga_jual = Number(b.harga_jual || 0);
+  itemForm.keterangan = b.keterangan || '';
+  editingId.value = b.id;
+  barcodeCheckWarning.value = '';
+  barcodeScanSuccess.value = `Data [${b.kode_barang}] ${b.nama_barang} berhasil dimuat!`;
+};
+
+const onBarcodeInputChange = () => {
+  barcodeScanSuccess.value = '';
+  clearTimeout(barcodeCheckTimeout);
+  barcodeCheckTimeout = setTimeout(() => {
+    checkBarcodeDuplicate(itemForm.barcode);
+  }, 400);
+};
+
+const onBarcodeEnterKey = () => {
+  clearTimeout(barcodeCheckTimeout);
+  checkBarcodeDuplicate(itemForm.barcode);
+  nextTick(() => {
+    const namaInput = document.getElementById('nama_barang');
+    if (namaInput) namaInput.focus();
+  });
+};
+
+const clearBarcode = () => {
+  itemForm.barcode = '';
+  barcodeCheckWarning.value = '';
+  barcodeScanSuccess.value = '';
+  existingBarangInfo.value = null;
+  if (barcodeInputRef.value) barcodeInputRef.value.focus();
+};
+
+const startCameraScanner = async () => {
+  isScannerActive.value = true;
+  barcodeCheckWarning.value = '';
+  barcodeScanSuccess.value = '';
+  isScanningBusy = false;
+  await nextTick();
+  try {
+    const formatsToSupport = [
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.ITF,
+      Html5QrcodeSupportedFormats.QR_CODE
+    ];
+
+    html5QrScannerInstance = new Html5Qrcode('barcode-reader-viewfinder', {
+      formatsToSupport,
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true
+      },
+      verbose: false
+    });
+
+    // Dapatkan daftar kamera fisik yang tersedia di laptop / HP
+    const cameras = await Html5Qrcode.getCameras();
+    if (!cameras || cameras.length === 0) {
+      alert('Tidak ada kamera atau webcam yang terdeteksi pada perangkat ini.');
+      isScannerActive.value = false;
+      return;
+    }
+
+    // Prioritaskan kamera belakang jika ada di HP, atau gunakan webcam pertama jika di laptop
+    let chosenCameraId = cameras[0].id;
+    const backCam = cameras.find(c => 
+      c.label.toLowerCase().includes('back') || 
+      c.label.toLowerCase().includes('rear') || 
+      c.label.toLowerCase().includes('belakang') ||
+      c.label.toLowerCase().includes('environment')
+    );
+    if (backCam) {
+      chosenCameraId = backCam.id;
+    } else if (cameras.length > 1) {
+      chosenCameraId = cameras[cameras.length - 1].id;
+    }
+
+    await html5QrScannerInstance.start(
+      chosenCameraId,
+      {
+        fps: 20,
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+          const w = Math.min(Math.round(viewfinderWidth * 0.9), 360);
+          const h = Math.min(Math.round(viewfinderHeight * 0.55), 180);
+          return { width: Math.max(w, 220), height: Math.max(h, 110) };
+        },
+        aspectRatio: 1.6
+      },
+      async (decodedText) => {
+        if (isScanningBusy) return;
+        isScanningBusy = true;
+        const code = (decodedText || '').trim();
+        if (!code) {
+          isScanningBusy = false;
+          return;
+        }
+        playScanBeep();
+        itemForm.barcode = code;
+        barcodeScanSuccess.value = code;
+        await stopCameraScanner();
+        await checkBarcodeDuplicate(code);
+        nextTick(() => {
+          const namaInput = document.getElementById('nama_barang');
+          if (namaInput) namaInput.focus();
+        });
+      },
+      (errorMessage) => {
+        // Frame did not decode any barcode, continuous scan
+      }
+    );
+  } catch (err) {
+    console.error('Gagal mengakses kamera:', err);
+    alert('Tidak dapat mengaktifkan kamera. Pastikan izin akses kamera telah diizinkan pada browser.');
+    isScannerActive.value = false;
+  }
+};
+
+const stopCameraScanner = async () => {
+  if (html5QrScannerInstance) {
+    try {
+      await html5QrScannerInstance.stop();
+      html5QrScannerInstance.clear();
+    } catch (e) {
+      console.warn('Error saat menghentikan scanner kamera:', e);
+    }
+    html5QrScannerInstance = null;
+  }
+  isScannerActive.value = false;
+};
+
+const toggleCameraScanner = () => {
+  if (isScannerActive.value) {
+    stopCameraScanner();
+  } else {
+    startCameraScanner();
+  }
+};
+
 const itemForm = reactive({
+  barcode: '',
   nama_barang: '',
   kategori_id: '',
   merk: '',
@@ -629,7 +960,7 @@ const fetchBarang = async () => {
       let filtered = allLocal;
       if (filters.search) {
         const q = filters.search.toLowerCase();
-        filtered = filtered.filter(b => (b.nama_barang || '').toLowerCase().includes(q) || (b.kode_barang || '').toLowerCase().includes(q));
+        filtered = filtered.filter(b => (b.nama_barang || '').toLowerCase().includes(q) || (b.kode_barang || '').toLowerCase().includes(q) || (b.barcode || '').toLowerCase().includes(q) || (b.merk || '').toLowerCase().includes(q));
       }
       if (filters.kategori_id) {
         filtered = filtered.filter(b => String(b.kategori_id) === String(filters.kategori_id));
@@ -679,7 +1010,7 @@ const fetchBarang = async () => {
       let filtered = allLocal;
       if (filters.search) {
         const q = filters.search.toLowerCase();
-        filtered = filtered.filter(b => (b.nama_barang || '').toLowerCase().includes(q) || (b.kode_barang || '').toLowerCase().includes(q));
+        filtered = filtered.filter(b => (b.nama_barang || '').toLowerCase().includes(q) || (b.kode_barang || '').toLowerCase().includes(q) || (b.barcode || '').toLowerCase().includes(q) || (b.merk || '').toLowerCase().includes(q));
       }
       if (filters.kategori_id) {
         filtered = filtered.filter(b => String(b.kategori_id) === String(filters.kategori_id));
@@ -705,7 +1036,9 @@ const changePage = (newPage) => {
 };
 
 const openCreateModal = () => {
+  stopCameraScanner();
   editingId.value = null;
+  itemForm.barcode = '';
   itemForm.nama_barang = '';
   itemForm.kategori_id = categories.value.length > 0 ? categories.value[0].id : '';
   itemForm.merk = '';
@@ -715,11 +1048,19 @@ const openCreateModal = () => {
   itemForm.harga_jual = 0;
   itemForm.keterangan = '';
   itemModalError.value = '';
+  barcodeCheckWarning.value = '';
+  barcodeScanSuccess.value = '';
+  existingBarangInfo.value = null;
   showItemModal.value = true;
+  nextTick(() => {
+    if (barcodeInputRef.value) barcodeInputRef.value.focus();
+  });
 };
 
 const openEditModal = (item) => {
+  stopCameraScanner();
   editingId.value = item.id;
+  itemForm.barcode = item.barcode || '';
   itemForm.nama_barang = item.nama_barang;
   itemForm.kategori_id = item.kategori_id;
   itemForm.merk = item.merk;
@@ -728,20 +1069,30 @@ const openEditModal = (item) => {
   itemForm.harga_jual = Number(item.harga_jual);
   itemForm.keterangan = item.keterangan || '';
   itemModalError.value = '';
+  barcodeCheckWarning.value = '';
+  barcodeScanSuccess.value = '';
+  existingBarangInfo.value = null;
   showItemModal.value = true;
 };
 
 const closeItemModal = () => {
+  stopCameraScanner();
   showItemModal.value = false;
 };
 
 const saveBarang = async () => {
+  if (barcodeCheckWarning.value) {
+    itemModalError.value = barcodeCheckWarning.value;
+    return;
+  }
   itemSaving.value = true;
   itemModalError.value = '';
 
   const saveOffline = async () => {
+    const rawBarcode = itemForm.barcode ? itemForm.barcode.trim() : null;
     if (editingId.value) {
       await db.barang.update(editingId.value, {
+        barcode: rawBarcode,
         nama_barang: itemForm.nama_barang,
         kategori_id: itemForm.kategori_id,
         merk: itemForm.merk,
@@ -753,7 +1104,7 @@ const saveBarang = async () => {
       await queueOfflineAction(
         `/barang/${editingId.value}`,
         'PUT',
-        { ...itemForm },
+        { ...itemForm, barcode: rawBarcode },
         `Ubah Barang: ${itemForm.nama_barang}`
       );
     } else {
@@ -767,6 +1118,7 @@ const saveBarang = async () => {
       await db.barang.add({
         id: tempId,
         kode_barang: newKode,
+        barcode: rawBarcode,
         nama_barang: itemForm.nama_barang,
         kategori_id: itemForm.kategori_id,
         merk: itemForm.merk,
@@ -780,7 +1132,7 @@ const saveBarang = async () => {
       await queueOfflineAction(
         '/barang',
         'POST',
-        { ...itemForm },
+        { ...itemForm, barcode: rawBarcode },
         `Tambah Barang: ${itemForm.nama_barang}`
       );
     }
@@ -801,10 +1153,14 @@ const saveBarang = async () => {
   }
 
   try {
+    const payload = {
+      ...itemForm,
+      barcode: itemForm.barcode ? itemForm.barcode.trim() : null
+    };
     if (editingId.value) {
-      await api.put(`/barang/${editingId.value}`, itemForm);
+      await api.put(`/barang/${editingId.value}`, payload);
     } else {
-      await api.post('/barang', itemForm);
+      await api.post('/barang', payload);
     }
     closeItemModal();
     fetchBarang();
@@ -985,15 +1341,58 @@ const handleCatalogUpdated = () => {
   fetchBarang();
 };
 
+let scannerBuffer = '';
+let lastKeyTime = 0;
+
+const handleGlobalScannerKeydown = (e) => {
+  if (!showItemModal.value) return;
+
+  const now = Date.now();
+  const diff = now - lastKeyTime;
+  lastKeyTime = now;
+
+  // Scanner biasanya mengirim Enter di akhir barcode
+  if (e.key === 'Enter') {
+    if (scannerBuffer.length >= 6) {
+      e.preventDefault();
+      const code = scannerBuffer.trim();
+      itemForm.barcode = code;
+      barcodeScanSuccess.value = code;
+      playScanBeep();
+      checkBarcodeDuplicate(code);
+      scannerBuffer = '';
+      nextTick(() => {
+        const namaInput = document.getElementById('nama_barang');
+        if (namaInput) namaInput.focus();
+      });
+      return;
+    }
+    scannerBuffer = '';
+    return;
+  }
+
+  // Barcode scanner / Barcode to PC mengetik sangat cepat (interval < 55ms)
+  if (diff < 55 && e.key.length === 1) {
+    scannerBuffer += e.key;
+  } else {
+    if (diff > 120) {
+      scannerBuffer = e.key.length === 1 ? e.key : '';
+    }
+  }
+};
+
 onMounted(() => {
   fetchCategories();
   fetchBarang();
   window.addEventListener('catalog-mirrored', handleCatalogUpdated);
   window.addEventListener('sync-complete', handleCatalogUpdated);
+  window.addEventListener('keydown', handleGlobalScannerKeydown);
 });
 
 onUnmounted(() => {
+  stopCameraScanner();
   window.removeEventListener('catalog-mirrored', handleCatalogUpdated);
   window.removeEventListener('sync-complete', handleCatalogUpdated);
+  window.removeEventListener('keydown', handleGlobalScannerKeydown);
 });
 </script>

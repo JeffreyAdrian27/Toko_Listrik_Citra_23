@@ -10,6 +10,7 @@ const {
   getAllBarang,
   getBarangById,
   lookupBarang,
+  checkBarcode,
   createBarang,
   updateBarang,
   tambahStokBarang,
@@ -23,6 +24,7 @@ router.use(verifyToken);
 
 // Accessible by Pegawai & Admin for autocomplete in sales (NO MOD_harga returned)
 router.get('/lookup', lookupBarang);
+router.get('/check-barcode/:barcode', checkBarcode);
 
 // Accessible only by Admin
 router.get('/', requireRole('admin'), getAllBarang);

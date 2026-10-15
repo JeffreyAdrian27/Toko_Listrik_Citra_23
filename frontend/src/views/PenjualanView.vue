@@ -44,6 +44,97 @@
           {{ errorMsg }}
         </div>
 
+        <!-- Barcode Scanner Bar -->
+        <div style="background: #F8FAFC; border: 1px solid var(--border-medium); border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+            <label class="form-label" for="penjualan_barcode_input" style="margin-bottom: 0; font-weight: 700; display: flex; align-items: center; gap: 8px; color: var(--color-primary);">
+              <Barcode :size="18" class="barcode-icon-desktop" />
+              <span>Scan Barcode Produk (Alat Scan / Kamera)</span>
+            </label>
+            <button
+              type="button"
+              @click="toggleCameraScanner"
+              class="btn btn-sm"
+              :style="isScannerActive ? 'background: #EF4444; color: #FFF; border: none;' : 'background: #EEF2FF; color: #4F46E5; border: 1px solid #C7D2FE;'"
+              style="padding: 5px 12px; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; border-radius: 6px;"
+            >
+              <Camera :size="14" />
+              <span>{{ isScannerActive ? 'Tutup Kamera' : 'Scan via Kamera HP/ Alat Scan' }}</span>
+            </button>
+          </div>
+
+          <!-- Viewfinder jika scanner kamera aktif -->
+          <div v-if="isScannerActive" style="margin: 10px 0; padding: 10px; background: #0F172A; border-radius: 8px; text-align: center;">
+            <div style="font-size: 0.75rem; color: #94A3B8; margin-bottom: 6px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+              <ScanLine :size="14" style="color: #38BDF8;" />
+              Arahkan barcode produk ke kamera
+            </div>
+            <div id="penjualan-barcode-viewfinder" style="width: 100%; max-width: 380px; margin: 0 auto; border-radius: 6px; overflow: hidden; background: #000; min-height: 200px;"></div>
+          </div>
+
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <div style="position: relative; flex: 1;">
+              <input
+                id="penjualan_barcode_input"
+                ref="barcodeInputRef"
+                v-model="barcodeScanInput"
+                @keydown.enter.prevent="handleBarcodeSubmit"
+                type="text"
+                class="form-input"
+                placeholder="Arahkan alat scan atau ketik barcode lalu tekan Enter..."
+                style="font-family: monospace; font-size: 0.95rem; letter-spacing: 0.05em; padding-right: 32px;"
+              />
+              <button
+                v-if="barcodeScanInput"
+                type="button"
+                @click="clearBarcodeInput"
+                style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #94A3B8; padding: 2px;"
+                title="Hapus input barcode"
+              >
+                <X :size="14" />
+              </button>
+            </div>
+            <button
+              type="button"
+              @click="handleBarcodeSubmit"
+              class="btn btn-primary"
+              style="padding: 9px 18px; font-size: 0.85rem; white-space: nowrap;"
+              :disabled="barcodeSearching || !barcodeScanInput.trim()"
+            >
+              {{ barcodeSearching ? 'Mencari...' : 'Pilih Barang' }}
+            </button>
+          </div>
+
+          <!-- Alert Hasil Scan Barcode -->
+          <div v-if="barcodeSearching" style="font-size: 0.8rem; color: #64748B; margin-top: 6px;">
+            Memeriksa barcode barang...
+          </div>
+          <div
+            v-else-if="barcodeAlertSuccess"
+            style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding: 8px 12px; background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 6px; color: #065F46; font-size: 0.85rem; font-weight: 600;"
+          >
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <CheckCircle2 :size="16" style="color: #059669;" />
+              <span>{{ barcodeAlertSuccess }}</span>
+            </div>
+            <button type="button" @click="barcodeAlertSuccess = ''" style="background: none; border: none; cursor: pointer; color: #059669; font-size: 0.85rem; padding: 0 4px;">
+              ✕
+            </button>
+          </div>
+          <div
+            v-else-if="barcodeAlertWarning"
+            style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding: 8px 12px; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; color: #991B1B; font-size: 0.85rem; font-weight: 600;"
+          >
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <AlertTriangle :size="16" style="color: #DC2626;" />
+              <span>{{ barcodeAlertWarning }}</span>
+            </div>
+            <button type="button" @click="barcodeAlertWarning = ''" style="background: none; border: none; cursor: pointer; color: #DC2626; font-size: 0.85rem; padding: 0 4px;">
+              ✕
+            </button>
+          </div>
+        </div>
+
         <form @submit.prevent="submitSale">
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
             <!-- Autocomplete Pencarian Barang -->
@@ -547,13 +638,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import { useAuthStore } from '../stores/auth';
 import api from '../api';
 import { db } from '../db/clientDb';
-import { isOnline, queueOfflineAction, searchLocalBarang } from '../services/syncManager';
+import { isOnline, queueOfflineAction, searchLocalBarang, findLocalBarangByBarcode } from '../services/syncManager';
 import {
   ShoppingCart,
   Search,
@@ -565,7 +657,11 @@ import {
   Ban,
   AlertTriangle,
   X,
-  WifiOff
+  WifiOff,
+  Barcode,
+  Camera,
+  ScanLine,
+  CheckCircle2
 } from 'lucide-vue-next';
 
 // Chart.js registration
@@ -727,6 +823,191 @@ const searchItems = () => {
       searchResults.value = await searchLocalBarang(productSearch.value, true);
     }
   }, 250);
+};
+
+const barcodeScanInput = ref('');
+const barcodeInputRef = ref(null);
+const isScannerActive = ref(false);
+const barcodeSearching = ref(false);
+const barcodeAlertWarning = ref('');
+const barcodeAlertSuccess = ref('');
+let html5QrScannerInstance = null;
+let isScanningBusy = false;
+
+const playScanBeep = () => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch (e) {}
+};
+
+const clearBarcodeInput = () => {
+  barcodeScanInput.value = '';
+  barcodeAlertWarning.value = '';
+  barcodeAlertSuccess.value = '';
+  if (barcodeInputRef.value) barcodeInputRef.value.focus();
+};
+
+const handleBarcodeSubmit = async () => {
+  const code = (barcodeScanInput.value || '').trim();
+  if (!code) return;
+  await processBarcodeScan(code);
+};
+
+const processBarcodeScan = async (code) => {
+  barcodeSearching.value = true;
+  barcodeAlertWarning.value = '';
+  barcodeAlertSuccess.value = '';
+
+  try {
+    let found = null;
+    if (isOnline.value) {
+      try {
+        const res = await api.get(`/barang/check-barcode/${encodeURIComponent(code)}`);
+        if (res.data && res.data.exists && res.data.barang) {
+          found = res.data.barang;
+        }
+      } catch (e) {
+        console.warn('Check barcode online gagal, fallback ke lokal:', e);
+      }
+    }
+
+    if (!found) {
+      found = await findLocalBarangByBarcode(code, true);
+    }
+
+    if (found) {
+      playScanBeep();
+      selectItem(found);
+      barcodeAlertSuccess.value = `Barang [${found.kode_barang}] ${found.nama_barang} otomatis terpilih! (Stok: ${found.stok_akhir} unit)`;
+      barcodeAlertWarning.value = '';
+      barcodeScanInput.value = '';
+      nextTick(() => {
+        const qtyEl = document.getElementById('sale_qty');
+        if (qtyEl) {
+          qtyEl.focus();
+          qtyEl.select();
+        }
+      });
+    } else {
+      barcodeAlertWarning.value = `Barang dengan barcode/kode "${code}" tidak ditemukan atau belum terdaftar di inventaris.`;
+      barcodeAlertSuccess.value = '';
+    }
+  } catch (err) {
+    console.error('Error proses barcode:', err);
+    barcodeAlertWarning.value = 'Gagal memproses barcode.';
+  } finally {
+    barcodeSearching.value = false;
+  }
+};
+
+const toggleCameraScanner = () => {
+  if (isScannerActive.value) {
+    stopCameraScanner();
+  } else {
+    startCameraScanner();
+  }
+};
+
+const startCameraScanner = async () => {
+  isScannerActive.value = true;
+  barcodeAlertWarning.value = '';
+  barcodeAlertSuccess.value = '';
+  isScanningBusy = false;
+  await nextTick();
+  try {
+    const formatsToSupport = [
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.ITF,
+      Html5QrcodeSupportedFormats.QR_CODE
+    ];
+
+    html5QrScannerInstance = new Html5Qrcode('penjualan-barcode-viewfinder', {
+      formatsToSupport,
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true
+      },
+      verbose: false
+    });
+
+    const cameras = await Html5Qrcode.getCameras();
+    if (!cameras || cameras.length === 0) {
+      alert('Tidak ada kamera atau webcam yang terdeteksi pada perangkat ini.');
+      isScannerActive.value = false;
+      return;
+    }
+
+    let chosenCameraId = cameras[0].id;
+    const backCam = cameras.find(c => 
+      c.label.toLowerCase().includes('back') || 
+      c.label.toLowerCase().includes('rear') || 
+      c.label.toLowerCase().includes('belakang') ||
+      c.label.toLowerCase().includes('environment')
+    );
+    if (backCam) {
+      chosenCameraId = backCam.id;
+    } else if (cameras.length > 1) {
+      chosenCameraId = cameras[cameras.length - 1].id;
+    }
+
+    await html5QrScannerInstance.start(
+      chosenCameraId,
+      {
+        fps: 20,
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+          const w = Math.min(Math.round(viewfinderWidth * 0.9), 360);
+          const h = Math.min(Math.round(viewfinderHeight * 0.55), 180);
+          return { width: Math.max(w, 220), height: Math.max(h, 110) };
+        },
+        aspectRatio: 1.6
+      },
+      async (decodedText) => {
+        if (isScanningBusy) return;
+        isScanningBusy = true;
+        const code = (decodedText || '').trim();
+        if (!code) {
+          isScanningBusy = false;
+          return;
+        }
+        await stopCameraScanner();
+        await processBarcodeScan(code);
+      },
+      () => {}
+    );
+  } catch (err) {
+    console.error('Gagal akses kamera:', err);
+    alert('Tidak dapat mengaktifkan kamera. Pastikan izin akses kamera telah diizinkan.');
+    isScannerActive.value = false;
+  }
+};
+
+const stopCameraScanner = async () => {
+  if (html5QrScannerInstance) {
+    try {
+      await html5QrScannerInstance.stop();
+      html5QrScannerInstance.clear();
+    } catch (e) {
+      console.warn('Error stop camera scanner:', e);
+    }
+    html5QrScannerInstance = null;
+  }
+  isScannerActive.value = false;
 };
 
 const selectItem = (item) => {
@@ -1029,6 +1310,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  stopCameraScanner();
   window.removeEventListener('sync-complete', handleSyncComplete);
 });
 </script>

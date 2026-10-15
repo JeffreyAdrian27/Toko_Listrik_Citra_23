@@ -211,12 +211,33 @@ export async function searchLocalBarang(keyword, forSaleOnly = false) {
       if (forSaleOnly && parseFloat(b.harga_jual || 0) <= 0) {
         return false;
       }
-      const combined = `${b.kode_barang || ''} ${b.nama_barang || ''} ${b.merk || ''}`.toLowerCase();
+      const combined = `${b.kode_barang || ''} ${b.barcode || ''} ${b.nama_barang || ''} ${b.merk || ''}`.toLowerCase();
       return tokens.every(tok => combined.includes(tok));
     }).slice(0, 30);
   } catch (err) {
     console.error('searchLocalBarang error:', err);
     return [];
+  }
+}
+
+/**
+ * Cari barang spesifik dari barcode / kode barang di IndexedDB lokal
+ */
+export async function findLocalBarangByBarcode(code, forSaleOnly = false) {
+  if (!code || !code.trim()) return null;
+  const trimmed = code.trim().toLowerCase();
+  try {
+    const all = await db.barang.toArray();
+    const match = all.find(b => {
+      if (forSaleOnly && parseFloat(b.harga_jual || 0) <= 0) return false;
+      const bCode = (b.barcode || '').trim().toLowerCase();
+      const kCode = (b.kode_barang || '').trim().toLowerCase();
+      return bCode === trimmed || kCode === trimmed;
+    });
+    return match || null;
+  } catch (err) {
+    console.error('findLocalBarangByBarcode error:', err);
+    return null;
   }
 }
 

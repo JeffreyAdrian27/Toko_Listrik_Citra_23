@@ -19,4 +19,8 @@ db.version(1).stores({
   meta: 'key'
 });
 
+db.version(2).stores({
+  barang: 'id, kode_barang, barcode, nama_barang, kategori_id, merk, stok_akhir, harga_jual'
+});
+
 export default db;

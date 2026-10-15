@@ -615,11 +615,20 @@ body {
   width: 100%;
   max-width: 540px;
   max-height: 90vh;
+  max-height: 90dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border-light);
   animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-content form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 @keyframes modalPop {
@@ -639,6 +648,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
 .modal-header h3 {
@@ -650,6 +660,9 @@ body {
 .modal-body {
   padding: 24px;
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-footer {
@@ -660,6 +673,38 @@ body {
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .modal-backdrop {
+    padding: 8px;
+    align-items: center;
+  }
+
+  .modal-content {
+    max-height: 92vh;
+    max-height: 92dvh;
+    border-radius: 14px;
+  }
+
+  .modal-header {
+    padding: 14px 16px;
+  }
+
+  .modal-body {
+    padding: 16px 14px;
+  }
+
+  .modal-footer {
+    padding: 12px 14px;
+  }
+
+  .form-grid-2,
+  .form-grid-3 {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
 }
 
 /* Filter Bar */
@@ -826,6 +871,18 @@ body {
 
 .spin-active {
   animation: globalSpin 0.75s linear infinite !important;
+}
+
+/* Responsive visibility for barcode icon: Muncul di layar laptop saja, disembunyikan di HP */
+.barcode-icon-desktop {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+@media (max-width: 768px) {
+  .barcode-icon-desktop {
+    display: none !important;
+  }
 }
 
 
