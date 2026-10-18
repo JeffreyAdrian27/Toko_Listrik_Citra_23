@@ -239,17 +239,31 @@
                   <Barcode :size="18" class="barcode-icon-desktop" style="color: var(--color-primary);" />
                   <span>Barcode Produk (EAN / QR / Scan HP)</span>
                 </label>
-                <button
-                  type="button"
-                  @click="toggleCameraScanner"
-                  class="btn btn-sm"
-                  :style="isScannerActive ? 'background: #EF4444; color: #FFF; border: none;' : 'background: #EEF2FF; color: #4F46E5; border: 1px solid #C7D2FE;'"
-                  style="padding: 4px 10px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; border-radius: 6px;"
-                  title="Gunakan webcam bawaan laptop/PC"
-                >
-                  <Camera :size="14" />
-                  <span>{{ isScannerActive ? 'Tutup Kamera' : 'Scan Barcode' }}</span>
-                </button>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                  <button
+                    type="button"
+                    @click="generateBarcodeOtomatis"
+                    class="btn btn-sm"
+                    style="background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; padding: 4px 10px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; border-radius: 6px;"
+                    title="Buat nomor barcode unik otomatis jika produk tidak punya barcode kemasan"
+                    :disabled="generatingBarcode"
+                  >
+                    <Sparkles :size="14" />
+                    <span>{{ generatingBarcode ? 'Membuat...' : 'Generate Barcode' }}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    @click="toggleCameraScanner"
+                    class="btn btn-sm"
+                    :style="isScannerActive ? 'background: #EF4444; color: #FFF; border: none;' : 'background: #EEF2FF; color: #4F46E5; border: 1px solid #C7D2FE;'"
+                    style="padding: 4px 10px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; border-radius: 6px;"
+                    title="Gunakan webcam bawaan laptop/PC"
+                  >
+                    <Camera :size="14" />
+                    <span>{{ isScannerActive ? 'Tutup Kamera' : 'Scan Barcode' }}</span>
+                  </button>
+                </div>
               </div>
 
               <!-- Viewfinder HTML5-QRCode jika scanner kamera aktif -->
@@ -479,8 +493,9 @@
               <span>Cara Kerja Sistem Import Otomatis:</span>
             </div>
             <ul style="margin: 0; padding-left: 18px;">
-              <li>Sistem akan memeriksa <strong>Nama Barang</strong> pada file Excel.</li>
-              <li><strong>Jika nama barang sudah ada</strong>: Stok barang akan otomatis ditambahkan dan sandi MOD diperbarui jika ada perubahan harga.</li>
+              <li>Kolom <strong>BARCODE (OPSIONAL)</strong>: Boleh diisi atau dikosongkan. Jika diisi, barcode langsung tersimpan ke database & siap digunakan untuk scan transaksi kasir/pembelian.</li>
+              <li>Sistem akan memeriksa kecocokan berdasarkan <strong>Barcode</strong> atau <strong>Nama Barang</strong>.</li>
+              <li><strong>Jika barang sudah ada</strong>: Stok barang otomatis bertambah, MOD diperbarui jika ada perubahan harga, dan barcode otomatis tersimpan jika sebelumnya belum ada.</li>
               <li><strong>Jika barang belum ada</strong>: Barang baru otomatis dibuat dengan kode barang terstandar Toko Citra 23.</li>
               <li>Riwayat pasokan masuk otomatis tercatat rapi pada menu Pembelian.</li>
             </ul>
@@ -609,7 +624,8 @@ import {
   CheckCircle2,
   Barcode,
   Camera,
-  ScanLine
+  ScanLine,
+  Sparkles
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -673,6 +689,56 @@ const barcodeScanSuccess = ref('');
 const existingBarangInfo = ref(null);
 let barcodeCheckTimeout = null;
 let isScanningBusy = false;
+const generatingBarcode = ref(false);
+
+const generateBarcodeOtomatis = async () => {
+  generatingBarcode.value = true;
+  barcodeScanSuccess.value = '';
+  barcodeCheckWarning.value = '';
+
+  try {
+    let newCode = '';
+    if (isOnline.value) {
+      try {
+        const res = await api.get('/barang/generate-barcode');
+        if (res.data && res.data.barcode) {
+          newCode = res.data.barcode;
+        }
+      } catch (err) {
+        console.warn('Gagal generate barcode via server, fallback lokal:', err);
+      }
+    }
+
+    // Fallback jika offline / server belum aktif
+    if (!newCode) {
+      const ts = String(Date.now()).slice(-6);
+      const rand = String(Math.floor(1000 + Math.random() * 9000));
+      const twelve = `23${ts}${rand}`;
+      let sum = 0;
+      for (let i = 0; i < 12; i++) {
+        const num = parseInt(twelve[i], 10);
+        sum += (i % 2 === 0) ? num : num * 3;
+      }
+      const mod = sum % 10;
+      const checkDigit = mod === 0 ? 0 : 10 - mod;
+      newCode = `${twelve}${checkDigit}`;
+    }
+
+    itemForm.barcode = newCode;
+    playScanBeep();
+    barcodeScanSuccess.value = `Barcode otomatis ${newCode} berhasil dibuat!`;
+    barcodeCheckWarning.value = '';
+
+    if (barcodeInputRef.value) {
+      barcodeInputRef.value.focus();
+    }
+  } catch (e) {
+    console.error('Error generate barcode:', e);
+    barcodeCheckWarning.value = 'Gagal membuat barcode otomatis.';
+  } finally {
+    generatingBarcode.value = false;
+  }
+};
 
 const playScanBeep = () => {
   try {

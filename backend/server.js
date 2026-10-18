@@ -68,6 +68,27 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Terjadi kesalahan internal pada server.' });
 });
 
+const pool = require('./config/db');
+
+// Background Routine: Otomatis hapus data password_resets yang kadaluarsa (expired) atau sudah terpakai
+const cleanupExpiredPasswordResets = async () => {
+  try {
+    const [result] = await pool.execute(
+      'DELETE FROM password_resets WHERE expires_at < NOW() OR used_at IS NOT NULL'
+    );
+    if (result.affectedRows > 0) {
+      console.log(`[Auto-Cleanup] ${result.affectedRows} record token password_resets yang expired/terpakai berhasil dihapus dari database.`);
+    }
+  } catch (err) {
+    // Hindari crash jika tabel belum ada atau koneksi database tertunda
+    console.error('[Auto-Cleanup Error]:', err.message);
+  }
+};
+
 app.listen(PORT, () => {
   console.log(`Server Toko Listrik Citra 23 running on port ${PORT}`);
+  // Jalankan pembersihan segera saat server boot
+  cleanupExpiredPasswordResets();
+  // Jalankan pembersihan rutin setiap 15 menit
+  setInterval(cleanupExpiredPasswordResets, 15 * 60 * 1000);
 });

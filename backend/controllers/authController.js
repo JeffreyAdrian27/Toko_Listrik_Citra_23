@@ -129,12 +129,15 @@ const forgotPassword = async (req, res) => {
     }
 
     const admin = admins[0];
-    const registeredAdminEmail = (admin.email || process.env.ADMIN_EMAIL || 'jeffreyadrian27@gmail.com').trim().toLowerCase();
+    const registeredAdminEmail = (admin.email || process.env.ADMIN_EMAIL || 'liasinata@gmail.com').trim().toLowerCase();
 
     // Validasi ketat: Input HARUS cocok dengan email admin terdaftar
     const allowedEmails = [
       registeredAdminEmail,
+      (process.env.ADMIN_EMAIL || '').trim().toLowerCase(),
       (process.env.SMTP_USER || '').trim().toLowerCase(),
+      'liasinata@gmail.com',
+      'citra23listrik@gmail.com',
       'jeffreyadrian27@gmail.com',
       'jeffreyadrian2702@gmail.com'
     ].filter(Boolean);
@@ -146,6 +149,9 @@ const forgotPassword = async (req, res) => {
     }
 
     const targetEmail = inputEmail;
+
+    // Bersihkan token yang sudah expired atau sudah pernah dipakai sebelum proses
+    await pool.execute('DELETE FROM password_resets WHERE expires_at < NOW() OR used_at IS NOT NULL');
 
     // 2. Proteksi Anti-Spam: Cek apakah ada request dalam 10 menit terakhir
     const [recentRequests] = await pool.execute(
@@ -225,15 +231,19 @@ const verifyResetToken = async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Tautan reset tidak ditemukan atau tidak valid.' });
+      return res.status(404).json({ error: 'Tautan reset tidak ditemukan atau sudah kadaluarsa/dihapus.' });
     }
 
     const resetReq = rows[0];
     if (resetReq.used_at !== null) {
+      // Hapus token yang sudah pernah digunakan
+      await pool.execute('DELETE FROM password_resets WHERE id = ?', [resetReq.id]);
       return res.status(400).json({ error: 'Tautan pemulihan ini sudah pernah digunakan sebelumnya.' });
     }
 
     if (new Date(resetReq.expires_at) < new Date()) {
+      // Hapus token yang sudah expired dari database
+      await pool.execute('DELETE FROM password_resets WHERE id = ?', [resetReq.id]);
       return res.status(400).json({ error: 'Tautan pemulihan telah kadaluarsa (melewati batas 15 menit).' });
     }
 
@@ -263,15 +273,19 @@ const resetPassword = async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Tautan reset tidak ditemukan.' });
+      return res.status(404).json({ error: 'Tautan reset tidak ditemukan atau sudah kadaluarsa/dihapus.' });
     }
 
     const resetReq = rows[0];
     if (resetReq.used_at !== null) {
+      // Hapus token yang sudah digunakan
+      await pool.execute('DELETE FROM password_resets WHERE id = ?', [resetReq.id]);
       return res.status(400).json({ error: 'Tautan pemulihan ini sudah pernah digunakan.' });
     }
 
     if (new Date(resetReq.expires_at) < new Date()) {
+      // Hapus token yang sudah expired dari database
+      await pool.execute('DELETE FROM password_resets WHERE id = ?', [resetReq.id]);
       return res.status(400).json({ error: 'Tautan pemulihan telah kadaluarsa.' });
     }
 
@@ -281,8 +295,8 @@ const resetPassword = async (req, res) => {
     // Update password di tabel users
     await pool.execute('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, resetReq.user_id]);
 
-    // Tandai token telah digunakan
-    await pool.execute('UPDATE password_resets SET used_at = NOW() WHERE id = ?', [resetReq.id]);
+    // Hapus data token reset dari database setelah sukses digunakan
+    await pool.execute('DELETE FROM password_resets WHERE id = ?', [resetReq.id]);
 
     // Catat ke activity log
     await pool.execute(`

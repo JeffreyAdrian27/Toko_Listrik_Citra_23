@@ -11,6 +11,7 @@ const {
   getBarangById,
   lookupBarang,
   checkBarcode,
+  generateBarcode,
   createBarang,
   updateBarang,
   tambahStokBarang,
@@ -25,6 +26,7 @@ router.use(verifyToken);
 // Accessible by Pegawai & Admin for autocomplete in sales (NO MOD_harga returned)
 router.get('/lookup', lookupBarang);
 router.get('/check-barcode/:barcode', checkBarcode);
+router.get('/generate-barcode', requireRole('admin'), generateBarcode);
 
 // Accessible only by Admin
 router.get('/', requireRole('admin'), getAllBarang);

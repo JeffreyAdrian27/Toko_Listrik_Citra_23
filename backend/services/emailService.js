@@ -5,7 +5,7 @@
 const nodemailer = require('nodemailer');
 
 function getTransporter() {
-  const user = (process.env.SMTP_USER || process.env.ADMIN_EMAIL || 'jeffreyadrian27@gmail.com').trim();
+  const user = (process.env.SMTP_USER || process.env.ADMIN_EMAIL || 'liasinata@gmail.com').trim();
   const pass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
 
   if (!pass) {
@@ -23,7 +23,7 @@ function getTransporter() {
 
 async function sendResetPasswordEmail({ to, resetUrl, adminName }) {
   const transporter = getTransporter();
-  const smtpUser = (process.env.SMTP_USER || process.env.ADMIN_EMAIL || 'jeffreyadrian27@gmail.com').trim();
+  const smtpUser = (process.env.SMTP_USER || process.env.ADMIN_EMAIL || 'liasinata@gmail.com').trim();
   const fromAddress = process.env.EMAIL_FROM || `Toko Listrik Citra 23 <${smtpUser}>`;
 
   const htmlContent = `

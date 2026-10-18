@@ -274,6 +274,53 @@ const checkBarcode = async (req, res) => {
   }
 };
 
+// Hitung check digit EAN-13 standard
+function calculateEan13CheckDigit(twelveDigits) {
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    const num = parseInt(twelveDigits[i], 10);
+    sum += (i % 2 === 0) ? num : num * 3;
+  }
+  const mod = sum % 10;
+  return mod === 0 ? 0 : 10 - mod;
+}
+
+// Generate Barcode unik standar toko (EAN-13 dengan prefix 23)
+const generateBarcode = async (req, res) => {
+  try {
+    let attempts = 0;
+    let candidate = '';
+    let isUnique = false;
+
+    while (!isUnique && attempts < 25) {
+      attempts++;
+      // Format 12 digit: '23' (Prefix Toko Citra 23) + 6 digit timestamp + 4 digit acak
+      const ts = String(Date.now()).slice(-6);
+      const rand = String(Math.floor(1000 + Math.random() * 9000));
+      const twelve = `23${ts}${rand}`;
+      const checkDigit = calculateEan13CheckDigit(twelve);
+      candidate = `${twelve}${checkDigit}`;
+
+      const [existing] = await pool.execute(
+        'SELECT id FROM barang WHERE (barcode = ? OR kode_barang = ?) AND deleted_at IS NULL LIMIT 1',
+        [candidate, candidate]
+      );
+      if (existing.length === 0) {
+        isUnique = true;
+      }
+    }
+
+    if (!isUnique) {
+      return res.status(500).json({ error: 'Gagal membuat barcode unik. Silakan coba lagi.' });
+    }
+
+    return res.json({ success: true, barcode: candidate });
+  } catch (err) {
+    console.error('generateBarcode error:', err);
+    return res.status(500).json({ error: 'Terjadi kesalahan saat generate barcode.' });
+  }
+};
+
 // Admin: Create Barang (MOD string code)
 const createBarang = async (req, res) => {
   const {
@@ -663,19 +710,20 @@ const downloadTemplateExcel = async (req, res) => {
       views: [{ showGridLines: true }]
     });
 
-    // 1. Lebar Kolom (7 kolom tanpa KODE BARANG dan tanpa TOTAL PEMBAYARAN)
+    // 1. Lebar Kolom (8 kolom: Tanggal, Barcode, Kategori, Nama, Merk, Harga Lama, Harga Baru, Qty)
     worksheet.columns = [
       { key: 'tanggal', width: 16 },
+      { key: 'barcode', width: 22 },
       { key: 'kategori', width: 25 },
       { key: 'nama', width: 48 },
       { key: 'merk', width: 18 },
       { key: 'harga_lama', width: 18 },
       { key: 'harga_baru', width: 28 },
-      { key: 'jumlah_masuk', width: 25 }
+      { key: 'jumlah_masuk', width: 16 }
     ];
 
-    // 2. Row 1: Banner Judul (Merged A1:G1)
-    worksheet.mergeCells('A1:G1');
+    // 2. Row 1: Banner Judul (Merged A1:H1)
+    worksheet.mergeCells('A1:H1');
     const titleCell = worksheet.getCell('A1');
     titleCell.value = 'REKAPAN BARANG MASUK -  BULANAN';
     titleCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF000000' } };
@@ -692,6 +740,7 @@ const downloadTemplateExcel = async (req, res) => {
     // 4. Row 3: Header Kolom (Warna Biru Solid & Teks Putih Bold persis screenshot)
     const headers = [
       'TANGGAL',
+      'BARCODE (OPSIONAL)',
       'KATEGORI BARANG',
       'NAMA BARANG',
       'MERK',
@@ -729,11 +778,11 @@ const downloadTemplateExcel = async (req, res) => {
       };
     });
 
-    // 5. Data Contoh / Template
+    // 5. Data Contoh / Template (Barcode opsional: ada yang terisi dan ada yang kosong)
     const sampleData = [
-      ['2026-10-14', 'LAMPU VOSCO', 'lampu LED t-bulb vosco 20w neo capsule', 'Vosco', 'LC', 'LT', 10],
-      ['', 'PANASONIC', 'stop kontak tempel panasonic', 'Panasonic', 'CDS', 'CDL', 20],
-      ['', 'FITTING', 'fitting lampu gantung karet waterproof', '', '-', 'X', 15]
+      ['2026-10-14', '8991234567890', 'LAMPU VOSCO', 'lampu LED t-bulb vosco 20w neo capsule', 'Vosco', 'LC', 'LT', 10],
+      ['', '', 'PANASONIC', 'stop kontak tempel panasonic', 'Panasonic', 'CDS', 'CDL', 20],
+      ['', '8999876543210', 'FITTING', 'fitting lampu gantung karet waterproof', '', '-', 'X', 15]
     ];
 
     sampleData.forEach((rowValues) => {
@@ -748,9 +797,15 @@ const downloadTemplateExcel = async (req, res) => {
           right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
         };
 
-        if (colNumber === 3) {
+        if (colNumber === 2) {
+          // Kolom Barcode: Format sebagai Text agar angka barcode panjang tidak terpotong
+          cell.numFmt = '@';
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else if (colNumber === 4) {
+          // Nama Barang
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
-        } else if (colNumber === 2 || colNumber === 4) {
+        } else if (colNumber === 3 || colNumber === 5) {
+          // Kategori & Merk
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
         } else {
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -811,6 +866,7 @@ const importExcelBarang = async (req, res) => {
 
     const headerRow = rawData[headerRowIdx].map(h => String(h || '').trim().toUpperCase());
     const colTanggal = headerRow.findIndex(h => h.includes('TANGGAL'));
+    const colBarcode = headerRow.findIndex(h => h.includes('BARCODE'));
     const colKategori = headerRow.findIndex(h => h.includes('KATEGORI'));
     const colNama = headerRow.findIndex(h => h.includes('NAMA BARANG'));
     const colMerk = headerRow.findIndex(h => h.includes('MERK'));
@@ -867,6 +923,18 @@ const importExcelBarang = async (req, res) => {
         continue;
       }
 
+      // 0. Barcode (Opsional: boleh terisi atau kosong/null)
+      let cleanBarcode = null;
+      if (colBarcode !== -1 && row[colBarcode] !== undefined && row[colBarcode] !== null) {
+        let bStr = String(row[colBarcode]).trim();
+        if (typeof row[colBarcode] === 'number') {
+          bStr = Number(row[colBarcode]).toLocaleString('fullwide', { useGrouping: false });
+        }
+        if (bStr && bStr !== '-' && bStr.toLowerCase() !== 'null' && bStr.toLowerCase() !== 'undefined') {
+          cleanBarcode = bStr;
+        }
+      }
+
       // 1. Tanggal
       const rawDate = colTanggal !== -1 ? row[colTanggal] : null;
       const parsedDate = parseExcelDate(rawDate, null);
@@ -904,14 +972,28 @@ const importExcelBarang = async (req, res) => {
         }
       }
 
-      // Cek apakah barang sudah ada di database (hanya berdasarkan nama barang)
-      const [existing] = await connection.execute(
-        'SELECT id, kode_barang, nama_barang, merk, kategori_id, `MOD`, modal_harga_beli, harga_jual, stok_akhir, total_masuk FROM barang WHERE LOWER(TRIM(nama_barang)) = LOWER(TRIM(?)) AND deleted_at IS NULL LIMIT 1',
-        [namaBarang]
-      );
+      // Cek apakah barang sudah ada di database (prioritas: barcode jika ada, lalu nama barang)
+      let existing = [];
+      if (cleanBarcode) {
+        const [byBarcode] = await connection.execute(
+          'SELECT id, kode_barang, barcode, nama_barang, merk, kategori_id, `MOD`, modal_harga_beli, harga_jual, stok_akhir, total_masuk FROM barang WHERE barcode = ? AND deleted_at IS NULL LIMIT 1',
+          [cleanBarcode]
+        );
+        if (byBarcode.length > 0) {
+          existing = byBarcode;
+        }
+      }
+
+      if (existing.length === 0) {
+        const [byName] = await connection.execute(
+          'SELECT id, kode_barang, barcode, nama_barang, merk, kategori_id, `MOD`, modal_harga_beli, harga_jual, stok_akhir, total_masuk FROM barang WHERE LOWER(TRIM(nama_barang)) = LOWER(TRIM(?)) AND deleted_at IS NULL LIMIT 1',
+          [namaBarang]
+        );
+        existing = byName;
+      }
 
       if (existing.length > 0) {
-        // SUDAH ADA: Update stok dan perbarui MOD
+        // SUDAH ADA: Update stok dan perbarui MOD (& barcode jika ada input baru)
         const item = existing[0];
         const oldMod = item.MOD || '';
         const oldModal = parseFloat(item.modal_harga_beli || 0);
@@ -921,16 +1003,18 @@ const importExcelBarang = async (req, res) => {
         const hasHargaLama = rawHargaLama && rawHargaLama !== '-';
         const modBaru = hasHargaBaru ? rawHargaBaru : (hasHargaLama ? rawHargaLama : oldMod);
         const modalBaru = modBaru ? (modToHarga(modBaru) || oldModal) : oldModal;
+        const barcodeToSave = cleanBarcode || item.barcode || null;
 
         await connection.execute(`
           UPDATE barang
           SET 
+            barcode = ?,
             \`MOD\` = ?,
             modal_harga_beli = ?,
             total_masuk = total_masuk + ?,
             stok_akhir = stok_akhir + ?
           WHERE id = ?
-        `, [modBaru, modalBaru, qtyMasuk, qtyMasuk, item.id]);
+        `, [barcodeToSave, modBaru, modalBaru, qtyMasuk, qtyMasuk, item.id]);
 
         if (qtyMasuk > 0) {
           const hargaLamaText = oldMod || (hasHargaLama ? rawHargaLama : '-');
@@ -959,6 +1043,7 @@ const importExcelBarang = async (req, res) => {
         itemResults.push({
           status: 'updated',
           kode_barang: item.kode_barang,
+          barcode: barcodeToSave,
           nama_barang: item.nama_barang,
           merk: item.merk || rawMerk,
           stok_ditambah: qtyMasuk,
@@ -980,12 +1065,13 @@ const importExcelBarang = async (req, res) => {
 
         const [insertRes] = await connection.execute(`
           INSERT INTO barang (
-            kode_barang, nama_barang, kategori_id, merk,
+            kode_barang, barcode, nama_barang, kategori_id, merk,
             stok_awal, total_masuk, total_keluar, stok_akhir,
             \`MOD\`, harga_jual, modal_harga_beli
-          ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
         `, [
           kodeBarangFinal,
+          cleanBarcode,
           namaBarang,
           kategoriId,
           rawMerk ? rawMerk.trim() : '',
@@ -1026,6 +1112,7 @@ const importExcelBarang = async (req, res) => {
         itemResults.push({
           status: 'created',
           kode_barang: kodeBarangFinal,
+          barcode: cleanBarcode,
           nama_barang: namaBarang,
           merk: rawMerk,
           stok_awal: qtyMasuk,
@@ -1066,6 +1153,7 @@ module.exports = {
   getBarangById,
   lookupBarang,
   checkBarcode,
+  generateBarcode,
   createBarang,
   updateBarang,
   tambahStokBarang,

@@ -102,3 +102,26 @@ CREATE TABLE IF NOT EXISTS activity_log (
   is_read BOOLEAN NOT NULL DEFAULT FALSE,
   INDEX idx_activity_created (created_at)
 ) ENGINE=InnoDB;
+
+-- 7. Table Password Resets (Token pemulihan password via Google SMTP, kadaluarsa 15 menit)
+-- Catatan: Data yang sudah kadaluarsa (expires_at < NOW()) atau sudah terpakai otomatis dihapus oleh backend routine.
+CREATE TABLE IF NOT EXISTS password_resets (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  email VARCHAR(100) NOT NULL,
+  token VARCHAR(100) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_token (token),
+  INDEX idx_email (email),
+  INDEX idx_expires (expires_at),
+  CONSTRAINT fk_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- (Opsional) Event Scheduler MySQL jika ingin pembersihan otomatis langsung di level server database:
+-- SET GLOBAL event_scheduler = ON;
+-- CREATE EVENT IF NOT EXISTS ev_clean_expired_password_resets
+-- ON SCHEDULE EVERY 15 MINUTE
+-- DO
+--   DELETE FROM password_resets WHERE expires_at < NOW() OR used_at IS NOT NULL;
