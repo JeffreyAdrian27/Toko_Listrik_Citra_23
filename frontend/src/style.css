@@ -475,6 +475,17 @@ body {
   background: var(--color-primary-light);
 }
 
+.btn-outline-danger {
+  background: transparent;
+  border-color: var(--status-danger-border);
+  color: var(--status-danger);
+}
+
+.btn-outline-danger:hover:not(:disabled) {
+  background: var(--status-danger-bg);
+  border-color: var(--status-danger);
+}
+
 /* Forms & Inputs */
 .form-group {
   margin-bottom: 18px;

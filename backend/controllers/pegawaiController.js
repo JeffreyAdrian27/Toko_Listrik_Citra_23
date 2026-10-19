@@ -136,4 +136,69 @@ const resetPasswordPegawai = async (req, res) => {
   }
 };
 
-module.exports = { getAllPegawai, createPegawai, updatePegawai, resetPasswordPegawai };
+// Admin: Hapus Akun Pegawai Permanen
+const deletePegawai = async (req, res) => {
+  const { id } = req.params;
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+
+  try {
+    const [existing] = await pool.execute('SELECT id, nama, username, role FROM users WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Akun pegawai tidak ditemukan.' });
+    }
+
+    const pgw = existing[0];
+    if (pgw.role === 'admin') {
+      return res.status(403).json({ error: 'Akun Administrator tidak dapat dihapus.' });
+    }
+
+    if (parseInt(id, 10) === req.user.id) {
+      return res.status(400).json({ error: 'Tidak dapat menghapus akun Anda sendiri yang sedang aktif.' });
+    }
+
+    // Cek apakah pegawai memiliki riwayat transaksi di penjualan atau pembelian
+    const [penjualanRows] = await pool.execute(
+      'SELECT id FROM penjualan WHERE created_by = ? OR voided_by = ? LIMIT 1',
+      [id, id]
+    );
+    if (penjualanRows.length > 0) {
+      return res.status(400).json({
+        error: `Akun pegawai "${pgw.nama}" tidak dapat dihapus permanen karena memiliki riwayat transaksi penjualan. Silakan gunakan fitur Nonaktifkan Akun agar data laporan keuangan tetap konsisten.`
+      });
+    }
+
+    const [pembelianRows] = await pool.execute(
+      'SELECT id FROM pembelian WHERE created_by = ? LIMIT 1',
+      [id]
+    );
+    if (pembelianRows.length > 0) {
+      return res.status(400).json({
+        error: `Akun pegawai "${pgw.nama}" tidak dapat dihapus permanen karena memiliki riwayat transaksi pembelian. Silakan gunakan fitur Nonaktifkan Akun agar data laporan keuangan tetap konsisten.`
+      });
+    }
+
+    // Bersihkan token reset jika ada
+    await pool.execute('DELETE FROM password_resets WHERE user_id = ?', [id]);
+
+    // Hapus pegawai dari tabel users
+    await pool.execute('DELETE FROM users WHERE id = ?', [id]);
+
+    // Catat ke audit trail
+    await logAudit({
+      userId: req.user.id,
+      role: req.user.role,
+      aksi: 'Hapus Akun Pegawai',
+      entitas: 'Users',
+      entitasId: id,
+      detail: `Menghapus akun pegawai: ${pgw.nama} (@${pgw.username})`,
+      ipAddress: clientIp
+    });
+
+    return res.json({ message: `Akun pegawai "${pgw.nama}" berhasil dihapus permanen.` });
+  } catch (err) {
+    console.error('deletePegawai error:', err);
+    return res.status(500).json({ error: 'Gagal menghapus akun pegawai.' });
+  }
+};
+
+module.exports = { getAllPegawai, createPegawai, updatePegawai, resetPasswordPegawai, deletePegawai };

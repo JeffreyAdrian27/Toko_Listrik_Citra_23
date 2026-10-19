@@ -4,7 +4,8 @@ const {
   getAllPegawai,
   createPegawai,
   updatePegawai,
-  resetPasswordPegawai
+  resetPasswordPegawai,
+  deletePegawai
 } = require('../controllers/pegawaiController');
 const { verifyToken, requireRole } = require('../middleware/auth');
 
@@ -15,5 +16,6 @@ router.get('/', getAllPegawai);
 router.post('/', createPegawai);
 router.put('/:id', updatePegawai);
 router.post('/:id/reset-password', resetPasswordPegawai);
+router.delete('/:id', deletePegawai);
 
 module.exports = router;

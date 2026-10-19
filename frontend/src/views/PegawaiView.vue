@@ -86,6 +86,15 @@
                       <Key :size="14" />
                       <span>Reset Sandi</span>
                     </button>
+                    <!-- Hapus Akun Pegawai -->
+                    <button
+                      @click="deletePegawai(pgw)"
+                      class="btn btn-sm btn-outline-danger"
+                      title="Hapus Akun Pegawai"
+                    >
+                      <Trash2 :size="14" />
+                      <span>Hapus</span>
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -142,15 +151,28 @@
 
             <div class="form-group">
               <label class="form-label" for="pgw_pass">Password Awal</label>
-              <input
-                id="pgw_pass"
-                v-model="createForm.password"
-                type="password"
-                class="form-input"
-                placeholder="Minimal 5 karakter"
-                required
-                minlength="5"
-              />
+              <div class="password-field-wrapper">
+                <input
+                  id="pgw_pass"
+                  v-model="createForm.password"
+                  :type="showCreatePassword ? 'text' : 'password'"
+                  class="form-input password-input"
+                  placeholder="Minimal 5 karakter"
+                  required
+                  minlength="5"
+                />
+                <button
+                  type="button"
+                  class="password-toggle-btn"
+                  @click="showCreatePassword = !showCreatePassword"
+                  :title="showCreatePassword ? 'Sembunyikan password' : 'Lihat password'"
+                  :aria-label="showCreatePassword ? 'Sembunyikan password' : 'Lihat password'"
+                  tabindex="-1"
+                >
+                  <EyeOff v-if="showCreatePassword" :size="18" />
+                  <Eye v-else :size="18" />
+                </button>
+              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -184,15 +206,28 @@
 
             <div class="form-group">
               <label class="form-label" for="new_pass">Password Baru</label>
-              <input
-                id="new_pass"
-                v-model="newPassword"
-                type="password"
-                class="form-input"
-                placeholder="Masukkan password baru"
-                required
-                minlength="5"
-              />
+              <div class="password-field-wrapper">
+                <input
+                  id="new_pass"
+                  v-model="newPassword"
+                  :type="showResetPassword ? 'text' : 'password'"
+                  class="form-input password-input"
+                  placeholder="Masukkan password baru"
+                  required
+                  minlength="5"
+                />
+                <button
+                  type="button"
+                  class="password-toggle-btn"
+                  @click="showResetPassword = !showResetPassword"
+                  :title="showResetPassword ? 'Sembunyikan password' : 'Lihat password'"
+                  :aria-label="showResetPassword ? 'Sembunyikan password' : 'Lihat password'"
+                  tabindex="-1"
+                >
+                  <EyeOff v-if="showResetPassword" :size="18" />
+                  <Eye v-else :size="18" />
+                </button>
+              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -212,13 +247,15 @@ import { ref, reactive, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
-import { Users, UserPlus, UserX, UserCheck, Key, X, RefreshCw } from 'lucide-vue-next';
+import { Users, UserPlus, UserX, UserCheck, Key, X, RefreshCw, Eye, EyeOff, Trash2 } from 'lucide-vue-next';
 
 const pegawaiList = ref([]);
 const loading = ref(true);
 
 const showCreateModal = ref(false);
 const showResetModal = ref(false);
+const showResetPassword = ref(false);
+const showCreatePassword = ref(false);
 const targetPegawai = ref(null);
 const newPassword = ref('');
 const modalError = ref('');
@@ -250,6 +287,7 @@ const openCreateModal = () => {
   createForm.nama = '';
   createForm.username = '';
   createForm.password = '';
+  showCreatePassword.value = false;
   modalError.value = '';
   showCreateModal.value = true;
 };
@@ -291,6 +329,7 @@ const toggleActive = async (pgw) => {
 const openResetModal = (pgw) => {
   targetPegawai.value = pgw;
   newPassword.value = '';
+  showResetPassword.value = false;
   modalError.value = '';
   showResetModal.value = true;
 };
@@ -322,7 +361,58 @@ const formatDate = (dateStr) => {
   return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
 };
 
+const deletePegawai = async (pgw) => {
+  if (confirm(`Apakah Anda yakin ingin MENGHAPUS PERMANEN akun pegawai "${pgw.nama}" (@${pgw.username})?\n\nTindakan ini tidak dapat dibatalkan.`)) {
+    try {
+      const res = await api.delete(`/pegawai/${pgw.id}`);
+      alert(res.data.message || 'Akun pegawai berhasil dihapus.');
+      fetchPegawai();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Gagal menghapus akun pegawai.');
+    }
+  }
+};
+
 onMounted(() => {
   fetchPegawai();
 });
 </script>
+
+<style scoped>
+.password-field-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.password-input {
+  width: 100%;
+  padding-right: 42px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: #94A3B8;
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.password-toggle-btn:hover {
+  color: #1E293B;
+  background-color: #F1F5F9;
+}
+
+.password-toggle-btn:focus-visible {
+  outline: 2px solid #005CE6;
+  outline-offset: 1px;
+}
+</style>
