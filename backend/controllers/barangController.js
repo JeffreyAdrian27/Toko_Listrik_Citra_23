@@ -710,7 +710,7 @@ const downloadTemplateExcel = async (req, res) => {
       views: [{ showGridLines: true }]
     });
 
-    // 1. Lebar Kolom (8 kolom: Tanggal, Barcode, Kategori, Nama, Merk, Harga Lama, Harga Baru, Qty)
+    // 1. Lebar Kolom (9 kolom: Tanggal, Barcode, Kategori, Nama, Merk, Harga Lama, Harga Baru, Harga Jual, Qty)
     worksheet.columns = [
       { key: 'tanggal', width: 16 },
       { key: 'barcode', width: 22 },
@@ -719,11 +719,12 @@ const downloadTemplateExcel = async (req, res) => {
       { key: 'merk', width: 18 },
       { key: 'harga_lama', width: 18 },
       { key: 'harga_baru', width: 28 },
+      { key: 'harga_jual', width: 20 },
       { key: 'jumlah_masuk', width: 16 }
     ];
 
-    // 2. Row 1: Banner Judul (Merged A1:H1)
-    worksheet.mergeCells('A1:H1');
+    // 2. Row 1: Banner Judul (Merged A1:I1)
+    worksheet.mergeCells('A1:I1');
     const titleCell = worksheet.getCell('A1');
     titleCell.value = 'REKAPAN BARANG MASUK -  BULANAN';
     titleCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF000000' } };
@@ -746,6 +747,7 @@ const downloadTemplateExcel = async (req, res) => {
       'MERK',
       'HARGA LAMA',
       'HARGA BARU MODAL SATUAN',
+      'HARGA JUAL',
       'JUMLAH MASUK ( SATUAN )'
     ];
 
@@ -778,11 +780,11 @@ const downloadTemplateExcel = async (req, res) => {
       };
     });
 
-    // 5. Data Contoh / Template (Barcode opsional: ada yang terisi dan ada yang kosong)
+    // 5. Data Contoh / Template (Barcode opsional, Harga Jual angka rupiah)
     const sampleData = [
-      ['2026-10-14', '8991234567890', 'LAMPU VOSCO', 'lampu LED t-bulb vosco 20w neo capsule', 'Vosco', 'LC', 'LT', 10],
-      ['', '', 'PANASONIC', 'stop kontak tempel panasonic', 'Panasonic', 'CDS', 'CDL', 20],
-      ['', '8999876543210', 'FITTING', 'fitting lampu gantung karet waterproof', '', '-', 'X', 15]
+      ['2026-10-14', '8991234567890', 'LAMPU VOSCO', 'lampu LED t-bulb vosco 20w neo capsule', 'Vosco', 'LC', 'LT', 35000, 10],
+      ['', '', 'PANASONIC', 'stop kontak tempel panasonic', 'Panasonic', 'CDS', 'CDL', 28000, 20],
+      ['', '8999876543210', 'FITTING', 'fitting lampu gantung karet waterproof', '', '-', 'X', 15000, 15]
     ];
 
     sampleData.forEach((rowValues) => {
@@ -807,6 +809,10 @@ const downloadTemplateExcel = async (req, res) => {
         } else if (colNumber === 3 || colNumber === 5) {
           // Kategori & Merk
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        } else if (colNumber === 8) {
+          // Kolom Harga Jual: Format angka numerik ribuan
+          cell.numFmt = '#,##0';
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
         } else {
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
         }
@@ -873,10 +879,41 @@ const importExcelBarang = async (req, res) => {
     const colKode = headerRow.findIndex(h => h.includes('KODE BARANG'));
     const colHargaLama = headerRow.findIndex(h => h.includes('HARGA LAMA'));
     const colHargaBaru = headerRow.findIndex(h => h.includes('HARGA BARU'));
+    const colHargaJual = headerRow.findIndex(h => h.includes('HARGA JUAL') || (h.includes('JUAL') && !h.includes('MODAL')));
     const colQty = headerRow.findIndex(h => h.includes('JUMLAH MASUK'));
 
     const todayStr = new Date().toISOString().split('T')[0];
     let lastSeenDate = todayStr;
+
+    function parseHargaJual(val) {
+      if (val === undefined || val === null) return null;
+      if (typeof val === 'number') {
+        return !isNaN(val) && val >= 0 ? val : null;
+      }
+      let str = String(val).trim();
+      if (!str || str === '-' || str.toLowerCase() === 'null') return null;
+      str = str.replace(/[^0-9.,]/g, '');
+      if (!str) return null;
+
+      if (str.includes('.') && !str.includes(',')) {
+        const parts = str.split('.');
+        if (parts.length > 1 && parts.slice(1).every(p => p.length === 3)) {
+          str = str.replace(/\./g, '');
+        }
+      } else if (str.includes(',') && !str.includes('.')) {
+        const parts = str.split(',');
+        if (parts.length > 1 && parts[parts.length - 1].length === 2) {
+          str = str.replace(/,/g, '.');
+        } else {
+          str = str.replace(/,/g, '');
+        }
+      } else if (str.includes('.') && str.includes(',')) {
+        str = str.replace(/\./g, '').replace(',', '.');
+      }
+
+      const num = parseFloat(str);
+      return !isNaN(num) && num >= 0 ? num : null;
+    }
 
     function parseExcelDate(val, fallback) {
       if (!val) return fallback;
@@ -963,6 +1000,12 @@ const importExcelBarang = async (req, res) => {
       const rawHargaLama = colHargaLama !== -1 && row[colHargaLama] ? String(row[colHargaLama]).trim().toUpperCase() : '';
       const rawHargaBaru = colHargaBaru !== -1 && row[colHargaBaru] ? String(row[colHargaBaru]).trim().toUpperCase() : '';
 
+      // 4b. Harga Jual (Opsional: angka/desimal/ribuan, jika diisi akan memperbarui atau mengatur harga jual)
+      let inputHargaJual = null;
+      if (colHargaJual !== -1 && row[colHargaJual] !== undefined && row[colHargaJual] !== null) {
+        inputHargaJual = parseHargaJual(row[colHargaJual]);
+      }
+
       // 5. Qty Masuk
       let qtyMasuk = 0;
       if (colQty !== -1 && row[colQty] !== undefined && row[colQty] !== null) {
@@ -993,7 +1036,7 @@ const importExcelBarang = async (req, res) => {
       }
 
       if (existing.length > 0) {
-        // SUDAH ADA: Update stok dan perbarui MOD (& barcode jika ada input baru)
+        // SUDAH ADA: Update stok, perbarui MOD, harga jual (& barcode jika ada input baru)
         const item = existing[0];
         const oldMod = item.MOD || '';
         const oldModal = parseFloat(item.modal_harga_beli || 0);
@@ -1004,6 +1047,8 @@ const importExcelBarang = async (req, res) => {
         const modBaru = hasHargaBaru ? rawHargaBaru : (hasHargaLama ? rawHargaLama : oldMod);
         const modalBaru = modBaru ? (modToHarga(modBaru) || oldModal) : oldModal;
         const barcodeToSave = cleanBarcode || item.barcode || null;
+        // Prioritas Harga Jual: Jika diisi di Excel perbarui, jika kosong pertahankan harga jual lama
+        const hargaJualFinal = inputHargaJual !== null ? inputHargaJual : parseFloat(item.harga_jual || 0);
 
         await connection.execute(`
           UPDATE barang
@@ -1011,10 +1056,11 @@ const importExcelBarang = async (req, res) => {
             barcode = ?,
             \`MOD\` = ?,
             modal_harga_beli = ?,
+            harga_jual = ?,
             total_masuk = total_masuk + ?,
             stok_akhir = stok_akhir + ?
           WHERE id = ?
-        `, [barcodeToSave, modBaru, modalBaru, qtyMasuk, qtyMasuk, item.id]);
+        `, [barcodeToSave, modBaru, modalBaru, hargaJualFinal, qtyMasuk, qtyMasuk, item.id]);
 
         if (qtyMasuk > 0) {
           const hargaLamaText = oldMod || (hasHargaLama ? rawHargaLama : '-');
@@ -1049,7 +1095,8 @@ const importExcelBarang = async (req, res) => {
           stok_ditambah: qtyMasuk,
           stok_akhir: item.stok_akhir + qtyMasuk,
           mod_lama: oldMod,
-          mod_baru: modBaru
+          mod_baru: modBaru,
+          harga_jual: hargaJualFinal
         });
       } else {
         // BELUM ADA: Buat barang baru
@@ -1057,8 +1104,8 @@ const importExcelBarang = async (req, res) => {
         const hasHargaLama = rawHargaLama && rawHargaLama !== '-';
         const activeMod = hasHargaBaru ? rawHargaBaru : (hasHargaLama ? rawHargaLama : '');
         const modalSatuan = activeMod ? modToHarga(activeMod) : 0;
-        // Jika belum ada harga jual yang valid, default 0 (akan diberi tanda & disembunyikan dari penjualan)
-        const hargaJualAwal = 0;
+        // Jika ada input harga jual di Excel gunakan, jika kosong default 0
+        const hargaJualAwal = inputHargaJual !== null ? inputHargaJual : 0;
 
         // Kode barang selalu digenerate sesuai coding (tidak mengambil dari file Excel)
         const kodeBarangFinal = await generateKodeBarang(connection, rawMerk);
@@ -1116,7 +1163,8 @@ const importExcelBarang = async (req, res) => {
           nama_barang: namaBarang,
           merk: rawMerk,
           stok_awal: qtyMasuk,
-          mod: activeMod
+          mod: activeMod,
+          harga_jual: hargaJualAwal
         });
       }
     }
@@ -1126,7 +1174,7 @@ const importExcelBarang = async (req, res) => {
     await logActivity({
       tipe: 'pembelian',
       judul: 'Import Excel Berhasil',
-      detail: `Import data Excel selesai: ${createdCount} barang baru ditambahkan, ${updatedCount} barang diupdate stok & MOD-nya.`
+      detail: `Import data Excel selesai: ${createdCount} barang baru ditambahkan, ${updatedCount} barang diupdate stok, MOD & harga jual.`
     });
 
     return res.json({

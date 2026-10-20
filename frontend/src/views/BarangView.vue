@@ -494,9 +494,10 @@
             </div>
             <ul style="margin: 0; padding-left: 18px;">
               <li>Kolom <strong>BARCODE (OPSIONAL)</strong>: Boleh diisi atau dikosongkan. Jika diisi, barcode langsung tersimpan ke database & siap digunakan untuk scan transaksi kasir/pembelian.</li>
+              <li>Kolom <strong>HARGA JUAL</strong>: Menentukan harga jual untuk barang baru atau memperbarui harga jual pada barang yang sudah ada. Jika dikosongkan pada barang yang sudah ada, harga jual lama tetap dipertahankan.</li>
               <li>Sistem akan memeriksa kecocokan berdasarkan <strong>Barcode</strong> atau <strong>Nama Barang</strong>.</li>
-              <li><strong>Jika barang sudah ada</strong>: Stok barang otomatis bertambah, MOD diperbarui jika ada perubahan harga, dan barcode otomatis tersimpan jika sebelumnya belum ada.</li>
-              <li><strong>Jika barang belum ada</strong>: Barang baru otomatis dibuat dengan kode barang terstandar Toko Citra 23.</li>
+              <li><strong>Jika barang sudah ada</strong>: Stok barang otomatis bertambah, MOD &amp; harga jual diperbarui, dan barcode otomatis tersimpan jika sebelumnya belum ada.</li>
+              <li><strong>Jika barang belum ada</strong>: Barang baru otomatis dibuat dengan kode barang terstandar Toko Citra 23 beserta harga jualnya.</li>
               <li>Riwayat pasokan masuk otomatis tercatat rapi pada menu Pembelian.</li>
             </ul>
           </div>
@@ -567,7 +568,7 @@
                 {{ importSummary.created }} Barang Baru Dibuat
               </span>
               <span class="badge badge-blue" style="padding: 6px 12px; font-size: 0.8rem;">
-                {{ importSummary.updated }} Barang Ditambah Stok &amp; MOD
+                {{ importSummary.updated }} Barang Ditambah Stok, MOD &amp; Harga Jual
               </span>
               <span v-if="importSummary.skipped" class="badge" style="background: #E2E8F0; color: #475569; padding: 6px 12px; font-size: 0.8rem;">
                 {{ importSummary.skipped }} Baris Dilewati (Kosong)
