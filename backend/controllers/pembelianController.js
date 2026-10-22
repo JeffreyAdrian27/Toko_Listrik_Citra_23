@@ -156,4 +156,189 @@ const getPembelianHistory = async (req, res) => {
   }
 };
 
-module.exports = { createPembelian, getPembelianHistory };
+// Admin: Edit / Koreksi Transaksi Pembelian & Sesuaikan Stok
+const updatePembelian = async (req, res) => {
+  const { id } = req.params;
+  const { jumlah_masuk, harga_beli, tanggal } = req.body;
+
+  const newQty = parseInt(jumlah_masuk, 10);
+  if (isNaN(newQty) || newQty <= 0) {
+    return res.status(400).json({ error: 'Jumlah masuk harus lebih besar dari 0.' });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [rows] = await connection.execute(
+      'SELECT id, barang_id, kode_barang, nama_barang, jumlah_masuk, total_pembayaran, tanggal, harga_baru_modal_satuan FROM pembelian WHERE id = ? FOR UPDATE',
+      [id]
+    );
+
+    if (rows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Data pembelian tidak ditemukan.' });
+    }
+
+    const pb = rows[0];
+    const oldQty = parseInt(pb.jumlah_masuk, 10) || 0;
+    const diffQty = newQty - oldQty;
+
+    let barangInfo = null;
+    if (pb.barang_id) {
+      const [bRows] = await connection.execute(
+        'SELECT id, kode_barang, nama_barang, `MOD`, modal_harga_beli, stok_akhir, total_masuk FROM barang WHERE id = ? FOR UPDATE',
+        [pb.barang_id]
+      );
+      if (bRows.length > 0) barangInfo = bRows[0];
+    }
+
+    if (barangInfo && diffQty < 0) {
+      const currentStock = parseInt(barangInfo.stok_akhir, 10) || 0;
+      if (currentStock + diffQty < 0) {
+        await connection.rollback();
+        return res.status(400).json({
+          error: `Pengurangan jumlah melebihi stok yang ada saat ini (${currentStock} unit) karena barang sebagian sudah terjual.`
+        });
+      }
+    }
+
+    // Tentukan modal dan MOD
+    let unitCost = parseFloat(barangInfo?.modal_harga_beli || 0);
+    let modCode = pb.harga_baru_modal_satuan;
+
+    if (harga_beli !== undefined && harga_beli !== null && !isNaN(harga_beli) && Number(harga_beli) > 0) {
+      unitCost = parseFloat(harga_beli);
+      modCode = hargaToMod(unitCost);
+    } else if (pb.harga_baru_modal_satuan && pb.harga_baru_modal_satuan !== '-') {
+      unitCost = modToHarga(pb.harga_baru_modal_satuan) || unitCost;
+    }
+
+    const totalPembayaran = unitCost * newQty;
+    const finalDate = tanggal || pb.tanggal;
+
+    await connection.execute(`
+      UPDATE pembelian
+      SET jumlah_masuk = ?, total_pembayaran = ?, tanggal = ?, harga_baru_modal_satuan = ?
+      WHERE id = ?
+    `, [newQty, totalPembayaran, finalDate, modCode, id]);
+
+    if (barangInfo) {
+      const newStock = (parseInt(barangInfo.stok_akhir, 10) || 0) + diffQty;
+      const newTotalMasuk = Math.max(0, (parseInt(barangInfo.total_masuk, 10) || 0) + diffQty);
+
+      await connection.execute(`
+        UPDATE barang
+        SET stok_akhir = ?, total_masuk = ?, \`MOD\` = ?, modal_harga_beli = ?
+        WHERE id = ?
+      `, [newStock, newTotalMasuk, modCode, unitCost, barangInfo.id]);
+    }
+
+    await connection.commit();
+
+    await logActivity({
+      tipe: 'pembelian',
+      judul: 'Pembelian Dikoreksi',
+      detail: `Transaksi pembelian [${pb.kode_barang}] ${pb.nama_barang} diubah dari ${oldQty} unit menjadi ${newQty} unit. Stok disesuaikan.`
+    });
+
+    return res.json({
+      message: 'Transaksi pembelian berhasil diperbarui dan stok telah disesuaikan.',
+      data: {
+        id: pb.id,
+        jumlah_masuk: newQty,
+        total_pembayaran: totalPembayaran
+      }
+    });
+  } catch (err) {
+    await connection.rollback();
+    console.error('updatePembelian error:', err);
+    return res.status(500).json({ error: 'Gagal memperbarui transaksi pembelian.' });
+  } finally {
+    connection.release();
+  }
+};
+
+// Admin: Batalkan / Hapus Transaksi Pembelian & Rollback Stok Barang
+const deletePembelian = async (req, res) => {
+  const { id } = req.params;
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [rows] = await connection.execute(
+      'SELECT id, barang_id, kode_barang, nama_barang, jumlah_masuk, total_pembayaran, tanggal, harga_baru_modal_satuan FROM pembelian WHERE id = ? FOR UPDATE',
+      [id]
+    );
+
+    if (rows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Data pembelian tidak ditemukan.' });
+    }
+
+    const pb = rows[0];
+    const qtyMasuk = parseInt(pb.jumlah_masuk, 10) || 0;
+
+    // Periksa barang terkait
+    let barangInfo = null;
+    if (pb.barang_id) {
+      const [barangRows] = await connection.execute(
+        'SELECT id, kode_barang, nama_barang, `MOD`, modal_harga_beli, stok_akhir, total_masuk FROM barang WHERE id = ? FOR UPDATE',
+        [pb.barang_id]
+      );
+      if (barangRows.length > 0) {
+        barangInfo = barangRows[0];
+      }
+    }
+
+    // Jika barang ditemukan, kurangi stoknya
+    if (barangInfo) {
+      const currentStock = parseInt(barangInfo.stok_akhir, 10) || 0;
+      if (currentStock < qtyMasuk) {
+        await connection.rollback();
+        return res.status(400).json({
+          error: `Tidak dapat membatalkan transaksi ini karena sisa stok saat ini (${currentStock} unit) lebih sedikit dari jumlah yang dibatalkan (${qtyMasuk} unit) akibat sebagian barang sudah terjual.`
+        });
+      }
+
+      const newStock = currentStock - qtyMasuk;
+      const newTotalMasuk = Math.max(0, (parseInt(barangInfo.total_masuk, 10) || 0) - qtyMasuk);
+
+      await connection.execute(`
+        UPDATE barang 
+        SET stok_akhir = ?, total_masuk = ?
+        WHERE id = ?
+      `, [newStock, newTotalMasuk, barangInfo.id]);
+    }
+
+    // Hapus dari tabel pembelian
+    await connection.execute('DELETE FROM pembelian WHERE id = ?', [id]);
+
+    await connection.commit();
+
+    await logActivity({
+      tipe: 'pembelian',
+      judul: 'Pembelian Dibatalkan',
+      detail: `Transaksi pembelian [${pb.kode_barang}] ${pb.nama_barang} sebanyak ${qtyMasuk} unit dibatalkan. Stok otomatis dikurangi kembali.`
+    });
+
+    return res.json({
+      message: `Transaksi pembelian berhasil dibatalkan. Stok barang otomatis dikurangi ${qtyMasuk} unit.`,
+      data: {
+        id: pb.id,
+        kode_barang: pb.kode_barang,
+        nama_barang: pb.nama_barang,
+        qty_dikurangi: qtyMasuk
+      }
+    });
+  } catch (err) {
+    await connection.rollback();
+    console.error('deletePembelian error:', err);
+    return res.status(500).json({ error: 'Gagal membatalkan transaksi pembelian.' });
+  } finally {
+    connection.release();
+  }
+};
+
+module.exports = { createPembelian, getPembelianHistory, updatePembelian, deletePembelian };

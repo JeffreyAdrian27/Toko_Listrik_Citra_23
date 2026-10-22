@@ -346,6 +346,7 @@
               <th style="text-align: center;">Jumlah Masuk</th>
               <th style="text-align: right;">Total Biaya (Rp)</th>
               <th>Dicatat Oleh</th>
+              <th style="text-align: center; width: 100px;">Aksi</th>
             </tr>
           </thead>
           <tbody>
@@ -378,9 +379,31 @@
               <td style="font-size: 0.8rem; color: var(--text-muted);">
                 {{ row.created_by_nama || 'Admin' }}
               </td>
+              <td style="text-align: center;">
+                <div style="display: inline-flex; gap: 6px;">
+                  <button
+                    type="button"
+                    @click="openEditModal(row)"
+                    class="btn btn-sm btn-secondary"
+                    style="padding: 4px 8px;"
+                    title="Koreksi Jumlah Masuk"
+                  >
+                    <Edit2 :size="14" />
+                  </button>
+                  <button
+                    type="button"
+                    @click="confirmDeletePembelian(row)"
+                    class="btn btn-sm btn-danger"
+                    style="padding: 4px 8px;"
+                    title="Batalkan / Hapus Transaksi"
+                  >
+                    <Trash2 :size="14" />
+                  </button>
+                </div>
+              </td>
             </tr>
             <tr v-if="!historyData.data || historyData.data.length === 0">
-              <td colspan="9" style="text-align: center; padding: 24px; color: var(--text-muted);">
+              <td colspan="10" style="text-align: center; padding: 24px; color: var(--text-muted);">
                 Belum ada transaksi pembelian pada periode terpilih.
               </td>
             </tr>
@@ -425,6 +448,111 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal Edit Pembelian -->
+    <div v-if="showEditModal" class="modal-backdrop" @click.self="closeEditModal">
+      <div class="modal-content" style="max-width: 480px;">
+        <div class="modal-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <Edit2 :size="20" style="color: var(--color-primary);" />
+            <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700;">Koreksi Transaksi Pembelian</h3>
+          </div>
+          <button type="button" class="btn btn-sm btn-secondary" style="padding: 4px 8px;" @click="closeEditModal">
+            <X :size="16" />
+          </button>
+        </div>
+
+        <form @submit.prevent="submitEditPembelian">
+          <div class="modal-body" style="padding: 20px;">
+            <div style="background: #F8FAFC; border: 1px solid var(--border-light); padding: 12px 14px; border-radius: 8px; margin-bottom: 16px;">
+              <div style="font-weight: 700; color: #0F172A; font-size: 0.95rem;">{{ editingRow?.nama_barang }}</div>
+              <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                Kode: <span class="badge badge-blue">{{ editingRow?.kode_barang }}</span>
+                &bull; MOD Satuan: <strong style="font-family: monospace;">{{ editingRow?.harga_baru_modal_satuan || '-' }}</strong>
+              </div>
+            </div>
+
+            <div v-if="editModalError" class="alert alert-danger" style="margin-bottom: 14px; font-size: 0.85rem; padding: 10px 14px; border-radius: 6px; background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA;">
+              {{ editModalError }}
+            </div>
+
+            <div class="form-group" style="margin-bottom: 14px;">
+              <label class="form-label" style="font-weight: 700;">Jumlah Masuk (Unit) <span style="color: red;">*</span></label>
+              <input
+                v-model.number="editForm.jumlah_masuk"
+                type="number"
+                min="1"
+                class="form-input num"
+                placeholder="Masukkan jumlah yang benar"
+                required
+              />
+              <p class="form-help" style="margin-top: 4px; font-size: 0.775rem; color: var(--text-muted);">
+                Sisa stok barang di tabel barang akan otomatis disesuaikan selisihnya.
+              </p>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 14px;">
+              <label class="form-label" style="font-weight: 700;">Tanggal Pembelian</label>
+              <input
+                v-model="editForm.tanggal"
+                type="date"
+                class="form-input"
+                required
+              />
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" @click="closeEditModal" class="btn btn-secondary" :disabled="editSaving">Batal</button>
+            <button type="submit" class="btn btn-primary" :disabled="editSaving">
+              <span v-if="editSaving">Menyimpan...</span>
+              <span v-else>Simpan Perubahan</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal Konfirmasi Hapus / Batal Pembelian -->
+    <div v-if="deletingRow" class="modal-backdrop" @click.self="deletingRow = null">
+      <div class="modal-content" style="max-width: 460px;">
+        <div class="modal-header" style="background: var(--status-danger-bg); border-bottom-color: var(--status-danger-border);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <AlertTriangle :size="20" style="color: #DC2626;" />
+            <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #DC2626;">Batalkan Pembelian?</h3>
+          </div>
+          <button type="button" class="btn btn-sm btn-secondary" style="padding: 4px 8px;" @click="deletingRow = null">
+            <X :size="16" />
+          </button>
+        </div>
+
+        <div class="modal-body" style="padding: 20px;">
+          <p style="margin-top: 0; margin-bottom: 14px; font-size: 0.9rem; line-height: 1.5; color: #334155;">
+            Apakah Anda yakin ingin membatalkan transaksi pembelian untuk produk ini?
+          </p>
+          <div style="background: #FEF2F2; border: 1px solid #FECACA; padding: 12px 14px; border-radius: 8px; margin-bottom: 14px;">
+            <div style="font-weight: 700; color: #991B1B; font-size: 0.95rem;">{{ deletingRow.nama_barang }}</div>
+            <div style="font-size: 0.85rem; color: #7F1D1D; margin-top: 4px;">
+              Jumlah masuk: <strong>{{ deletingRow.jumlah_masuk }} unit</strong> &bull; Total: <strong>Rp {{ formatNumber(deletingRow.total_pembayaran) }}</strong>
+            </div>
+          </div>
+          <p style="margin-bottom: 0; font-size: 0.85rem; color: #DC2626; font-weight: 600; line-height: 1.4;">
+            ⚠️ Stok barang akan otomatis dikurangi kembali sebanyak {{ deletingRow.jumlah_masuk }} unit.
+          </p>
+          <div v-if="deleteError" class="alert alert-danger" style="margin-top: 12px; font-size: 0.85rem; padding: 10px 14px; border-radius: 6px; background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA;">
+            {{ deleteError }}
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" @click="deletingRow = null" class="btn btn-secondary" :disabled="deleteLoading">Batal</button>
+          <button type="button" @click="executeDeletePembelian" class="btn btn-danger" :disabled="deleteLoading">
+            <span v-if="deleteLoading">Membatalkan...</span>
+            <span v-else>Ya, Batalkan &amp; Kurangi Stok</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -448,7 +576,9 @@ import {
   Camera,
   ScanLine,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Edit2,
+  Trash2
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -901,6 +1031,81 @@ const checkQueryParam = async () => {
 
 const handleSyncComplete = () => {
   fetchHistory();
+};
+
+// State Edit / Koreksi Pembelian
+const showEditModal = ref(false);
+const editingRow = ref(null);
+const editSaving = ref(false);
+const editModalError = ref('');
+const editForm = reactive({
+  jumlah_masuk: 1,
+  tanggal: ''
+});
+
+const openEditModal = (row) => {
+  editingRow.value = row;
+  editForm.jumlah_masuk = row.jumlah_masuk;
+  editForm.tanggal = row.tanggal ? row.tanggal.split('T')[0] : '';
+  editModalError.value = '';
+  showEditModal.value = true;
+};
+
+const closeEditModal = () => {
+  showEditModal.value = false;
+  editingRow.value = null;
+  editModalError.value = '';
+};
+
+const submitEditPembelian = async () => {
+  if (!editingRow.value || !editForm.jumlah_masuk) return;
+  editSaving.value = true;
+  editModalError.value = '';
+
+  try {
+    const res = await api.put(`/pembelian/${editingRow.value.id}`, {
+      jumlah_masuk: editForm.jumlah_masuk,
+      tanggal: editForm.tanggal
+    });
+    successMsg.value = res.data?.message || 'Transaksi pembelian berhasil diperbarui.';
+    closeEditModal();
+    fetchHistory();
+    window.dispatchEvent(new CustomEvent('activity-updated'));
+  } catch (err) {
+    console.error('Error update pembelian:', err);
+    editModalError.value = err.response?.data?.error || 'Gagal memperbarui transaksi pembelian.';
+  } finally {
+    editSaving.value = false;
+  }
+};
+
+// State Hapus / Batalkan Pembelian
+const deletingRow = ref(null);
+const deleteLoading = ref(false);
+const deleteError = ref('');
+
+const confirmDeletePembelian = (row) => {
+  deletingRow.value = row;
+  deleteError.value = '';
+};
+
+const executeDeletePembelian = async () => {
+  if (!deletingRow.value) return;
+  deleteLoading.value = true;
+  deleteError.value = '';
+
+  try {
+    const res = await api.delete(`/pembelian/${deletingRow.value.id}`);
+    successMsg.value = res.data?.message || 'Transaksi pembelian berhasil dibatalkan.';
+    deletingRow.value = null;
+    fetchHistory();
+    window.dispatchEvent(new CustomEvent('activity-updated'));
+  } catch (err) {
+    console.error('Error delete pembelian:', err);
+    deleteError.value = err.response?.data?.error || 'Gagal membatalkan transaksi pembelian.';
+  } finally {
+    deleteLoading.value = false;
+  }
 };
 
 onMounted(() => {

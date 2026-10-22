@@ -159,7 +159,7 @@ const getAllBarang = async (req, res) => {
       FROM barang b
       LEFT JOIN kategori k ON b.kategori_id = k.id
       ${whereClause}
-      ORDER BY b.id DESC
+      ORDER BY b.nama_barang ASC
       LIMIT ? OFFSET ?
     `;
 
@@ -782,9 +782,9 @@ const downloadTemplateExcel = async (req, res) => {
 
     // 5. Data Contoh / Template (Barcode opsional, Harga Jual angka rupiah)
     const sampleData = [
-      ['2026-10-14', '8991234567890', 'LAMPU VOSCO', 'lampu LED t-bulb vosco 20w neo capsule', 'Vosco', 'LC', 'LT', 35000, 10],
-      ['', '', 'PANASONIC', 'stop kontak tempel panasonic', 'Panasonic', 'CDS', 'CDL', 28000, 20],
-      ['', '8999876543210', 'FITTING', 'fitting lampu gantung karet waterproof', '', '-', 'X', 15000, 15]
+      ['2026-10-14', '8991234567890', 'LAMPU VOSCO', 'lampu LED t-bulb vosco 20w neo capsule', 'Vosco', 'LCB', 'LTB', 35000, 10],
+      ['', '', 'PANASONIC', 'stop kontak tempel panasonic', 'Panasonic', 'CDSB', 'CDLB', 28000, 20],
+      ['', '8999876543210', 'FITTING', 'fitting lampu gantung karet waterproof', '', '-', 'XB', 15000, 15]
     ];
 
     sampleData.forEach((rowValues) => {

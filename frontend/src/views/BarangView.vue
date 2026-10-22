@@ -1035,6 +1035,7 @@ const fetchBarang = async () => {
       if (filters.low_stock) {
         filtered = filtered.filter(b => (b.stok_akhir || 0) <= 5);
       }
+      filtered.sort((a, b) => (a.nama_barang || '').localeCompare(b.nama_barang || '', 'id', { sensitivity: 'base' }));
       pagination.total = filtered.length;
       pagination.totalPages = Math.ceil(filtered.length / pagination.limit) || 1;
       const start = (pagination.page - 1) * pagination.limit;
@@ -1085,6 +1086,7 @@ const fetchBarang = async () => {
       if (filters.low_stock) {
         filtered = filtered.filter(b => (b.stok_akhir || 0) <= 5);
       }
+      filtered.sort((a, b) => (a.nama_barang || '').localeCompare(b.nama_barang || '', 'id', { sensitivity: 'base' }));
       pagination.total = filtered.length;
       pagination.totalPages = Math.ceil(filtered.length / pagination.limit) || 1;
       const start = (pagination.page - 1) * pagination.limit;
