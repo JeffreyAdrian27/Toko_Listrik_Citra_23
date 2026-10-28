@@ -110,8 +110,8 @@
     </div>
 
     <!-- Modal Tambah Pegawai -->
-    <div v-if="showCreateModal" class="modal-backdrop" @click.self="closeCreateModal">
-      <div class="modal-content" style="max-width: 480px;">
+    <div v-if="showCreateModal" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="handleBackdropClick($event, closeCreateModal)">
+      <div class="modal-content" style="max-width: 480px;" @mousedown.stop @click.stop>
         <div class="modal-header">
           <h3>Tambah Akun Pegawai Baru</h3>
           <button @click="closeCreateModal" class="btn btn-sm btn-secondary" style="padding: 4px 8px;">
@@ -186,8 +186,8 @@
     </div>
 
     <!-- Modal Reset Password -->
-    <div v-if="showResetModal" class="modal-backdrop" @click.self="closeResetModal">
-      <div class="modal-content" style="max-width: 450px;">
+    <div v-if="showResetModal" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="handleBackdropClick($event, closeResetModal)">
+      <div class="modal-content" style="max-width: 450px;" @mousedown.stop @click.stop>
         <div class="modal-header">
           <h3>Reset Password Pegawai</h3>
           <button @click="closeResetModal" class="btn btn-sm btn-secondary" style="padding: 4px 8px;">
@@ -247,6 +247,7 @@ import { ref, reactive, onMounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
+import { onBackdropMouseDown, handleBackdropClick } from '../utils/modalHelper';
 import { Users, UserPlus, UserX, UserCheck, Key, X, RefreshCw, Eye, EyeOff, Trash2 } from 'lucide-vue-next';
 
 const pegawaiList = ref([]);

@@ -136,7 +136,6 @@ CREATE TABLE `penjualan` (
   `kode_barang` varchar(30) NOT NULL,
   `nama_barang` varchar(150) NOT NULL,
   `harga_jual` decimal(12,2) NOT NULL,
-  `harga_modal` varchar(20) NOT NULL DEFAULT '',
   `modal_satuan` decimal(12,2) NOT NULL DEFAULT '0.00',
   `jumlah` int NOT NULL,
   `omzet_penjualan` decimal(12,2) NOT NULL,

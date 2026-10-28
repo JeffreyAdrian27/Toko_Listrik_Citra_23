@@ -7,10 +7,10 @@
           <h3 class="card-title">Inventaris & Stok Barang</h3>
         </div>
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <!-- <button @click="downloadTemplate" class="btn btn-outline-primary btn-sm" title="Unduh Template Excel Toko Citra Listrik">
-            <Download :size="15" />
-            <span>Unduh Template</span>
-          </button> -->
+          <button @click="openModModal('header')" class="btn btn-sm" style="background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE; font-weight: 600;" title="Buka Kalkulator Cepat Rumus Kode MOD">
+            <Calculator :size="15" />
+            <span>Kalkulator MOD</span>
+          </button>
           <button @click="openImportModal" class="btn btn-sm" style="background: #ECFDF5; color: #059669; border: 1px solid #A7F3D0; font-weight: 600;" title="Upload Excel untuk Tambah & Update Stok Barang">
             <Upload :size="15" />
             <span>Import Excel</span>
@@ -59,7 +59,7 @@
         <LoadingSpinner
           v-if="loading"
           text="Memuat inventaris produk..."
-          subtext="Menyinkronkan stok, kategori, dan master kode MOD..."
+          subtext="Menyinkronkan stok, kategori, dan harga modal..."
           minHeight="240px"
         />
 
@@ -70,7 +70,7 @@
                 <th>Kode & Barcode</th>
                 <th>Nama Produk & Merk</th>
                 <th>Kategori</th>
-                <th style="text-align: center; width: 100px;">MOD</th>
+                <th style="text-align: right; width: 130px;">Harga Beli</th>
                 <th style="text-align: right;">Harga Jual</th>
                 <th style="text-align: center;">Sisa Stok</th>
                 <th style="text-align: right;">Aksi</th>
@@ -84,7 +84,7 @@
               >
                 <td>
                   <span class="badge badge-blue" style="font-weight: 700;">{{ item.kode_barang }}</span>
-                  <div v-if="item.barcode" style="margin-top: 4px;">
+                  <div v-if="item.barcode && item.barcode !== 'null' && item.barcode !== '-'" style="margin-top: 4px;">
                     <span
                       class="badge"
                       style="background: #F1F5F9; color: #334155; border: 1px solid #CBD5E1; font-size: 0.72rem; font-family: monospace; display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;"
@@ -106,14 +106,12 @@
                     {{ item.nama_kategori || '-' }}
                   </span>
                 </td>
-                <!-- Kolom MOD sesuai format kode huruf rahasia modal -->
-                <td style="text-align: center;">
-                  <span
-                    class="badge"
-                    :style="isModalLebihTinggi(item) ? 'background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; font-weight: 800; font-family: monospace; font-size: 0.9rem; letter-spacing: 0.05em; padding: 4px 10px;' : 'background: #EBF3FF; color: #005CE6; font-weight: 800; font-family: monospace; font-size: 0.9rem; letter-spacing: 0.05em; padding: 4px 10px;'"
-                  >
-                    {{ item.MOD || '-' }}
+                <!-- Kolom Harga Beli (Rp) -->
+                <td style="text-align: right; font-weight: 600;">
+                  <span v-if="parseFloat(item.modal_harga_beli || 0) > 0" style="color: var(--text-main);">
+                    Rp {{ formatNumber(item.modal_harga_beli) }}
                   </span>
+                  <span v-else style="color: var(--text-muted);">-</span>
                 </td>
                 <td class="num" style="text-align: right;">
                   <template v-if="parseFloat(item.harga_jual || 0) <= 0">
@@ -130,15 +128,15 @@
                     <div style="font-weight: 700;" :style="{ color: isModalLebihTinggi(item) ? '#DC2626' : 'var(--color-primary)' }">
                       Rp {{ formatNumber(item.harga_jual) }}
                     </div>
-                    <!-- Warning jika Harga Beli (MOD) > Harga Jual -->
+                    <!-- Warning jika Harga Beli > Harga Jual -->
                     <div
                       v-if="isModalLebihTinggi(item)"
                       class="badge"
                       style="background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; font-size: 0.7rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 6px; border-radius: 4px;"
-                      :title="`Peringatan: Modal MOD (Rp ${formatNumber(item.modal_harga_beli)}) lebih tinggi dari Harga Jual (Rp ${formatNumber(item.harga_jual)})!`"
+                      :title="`Peringatan: Harga Beli (Rp ${formatNumber(item.modal_harga_beli)}) lebih tinggi dari Harga Jual (Rp ${formatNumber(item.harga_jual)})!`"
                     >
                       <AlertTriangle :size="12" />
-                      <span>MOD &gt; Jual (Rugi)</span>
+                      <span>Beli &gt; Jual (Rugi)</span>
                     </div>
                   </template>
                 </td>
@@ -218,8 +216,8 @@
     </div>
 
     <!-- Modal Tambah / Edit Barang -->
-    <div v-if="showItemModal" class="modal-backdrop" @click.self="closeItemModal">
-      <div class="modal-content" style="max-width: 600px;">
+    <div v-if="showItemModal" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="handleBackdropClick($event, closeItemModal)">
+      <div class="modal-content" style="max-width: 600px;" @mousedown.stop @click.stop>
         <div class="modal-header">
           <h3>{{ editingId ? 'Edit Data Barang' : 'Tambah Barang Baru' }}</h3>
           <button @click="closeItemModal" class="btn btn-sm btn-secondary" style="padding: 4px 8px;">
@@ -371,21 +369,53 @@
                   placeholder="Contoh: Philips, Panasonic (Kosongkan bila noname)"
                   :disabled="!!editingId"
                 />
-                <p v-if="!editingId" class="form-help">Kode otomatis dibuat dari 3 huruf merk.</p>
+                <p v-if="!editingId" class="form-help">Kode otomatis: 3 huruf merk / NN bila noname.</p>
               </div>
             </div>
 
-            <div class="form-grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+            <!-- Inputan Kode / Sub-Kode (Wajib saat Tambah Baru) -->
+            <div v-if="!editingId" class="form-group" style="background: #F8FAFC; border: 1px solid #CBD5E1; padding: 12px; border-radius: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label class="form-label" for="sub_kode" style="margin-bottom: 0; font-weight: 700; color: #1E293B;">
+                  Inputan Kode Barang (Sub-Kode) <span style="color: red;">*</span>
+                </label>
+                <span style="font-size: 0.72rem; color: #DC2626; font-weight: 600;">Wajib Diisi</span>
+              </div>
+              <input
+                id="sub_kode"
+                v-model="itemForm.sub_kode"
+                type="text"
+                class="form-input"
+                placeholder="Wajib diisi (Contoh: 18, 15, dll)"
+                required
+                style="font-family: monospace; font-size: 0.95rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;"
+              />
+              <div style="margin-top: 6px; font-size: 0.78rem; color: #475569; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+                <span>
+                  Format Kode: <strong>C23 + {{ brandPrefixPreview }} + {{ (itemForm.sub_kode || '').toUpperCase().trim() || '[Kode]' }} + [Urutan: 001]</strong>
+                </span>
+                <span v-if="itemForm.sub_kode" style="color: #4F46E5; font-weight: 700; font-family: monospace;">
+                  Preview: C23{{ brandPrefixPreview }}{{ itemForm.sub_kode.toUpperCase().trim() }}001
+                </span>
+              </div>
+            </div>
+
+            <div class="form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
               <!-- Input Harga Beli / Modal (Rp) -->
               <div class="form-group">
-                <label class="form-label" for="harga_beli">Harga Beli / Modal (Rp)</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <label class="form-label" for="harga_beli" style="margin-bottom: 0;">Harga Beli / Modal (Rp)</label>
+                  <button type="button" @click="openModModal('form')" style="background: none; border: none; color: #4F46E5; font-size: 0.75rem; font-weight: 600; cursor: pointer; text-decoration: underline; padding: 0; display: inline-flex; align-items: center; gap: 4px;" title="Buka Kalkulator Cepat Rumus Kode MOD">
+                    <Calculator :size="13" />
+                    <span>Kalkulator MOD</span>
+                  </button>
+                </div>
                 <input
                   id="harga_beli"
                   v-model.number="itemForm.harga_beli"
-                  @input="onItemHargaBeliInput"
                   type="number"
                   min="0"
-                  step="100"
+                  step="any"
                   class="form-input num"
                   placeholder="Contoh: 54000"
                 />
@@ -395,21 +425,6 @@
                   </span>
                   <span v-else>Modal kulakan satuan produk.</span>
                 </p>
-              </div>
-
-              <!-- MOD Ter-generate Otomatis -->
-              <div class="form-group">
-                <label class="form-label" for="mod_input">MOD (Kode Huruf)</label>
-                <input
-                  id="mod_input"
-                  v-model="itemForm.MOD"
-                  type="text"
-                  class="form-input"
-                  placeholder="Auto..."
-                  style="text-transform: uppercase; font-family: monospace; font-weight: 800; color: var(--color-primary); text-align: center; font-size: 1.05rem;"
-                  disabled
-                />
-                <p class="form-help">Auto dari harga beli.</p>
               </div>
 
               <div class="form-group">
@@ -427,7 +442,7 @@
               </div>
             </div>
 
-            <!-- Warning jika MOD > Harga Jual di form tambah/edit barang -->
+            <!-- Warning jika Harga Beli > Harga Jual di form tambah/edit barang -->
             <div
               v-if="isFormModalLebihTinggi"
               class="badge badge-danger"
@@ -435,7 +450,7 @@
             >
               <AlertTriangle :size="18" style="flex-shrink: 0;" />
               <span>
-                <strong>Peringatan Jual Rugi:</strong> Modal MOD <strong>{{ itemForm.MOD }}</strong> (Perkiraan Rp {{ formatNumber(itemForm.harga_beli || modToHarga(itemForm.MOD)) }}) lebih tinggi dari Harga Jual (Rp {{ formatNumber(itemForm.harga_jual) }}).
+                <strong>Peringatan Jual Rugi:</strong> Harga Beli (Rp {{ formatNumber(itemForm.harga_beli) }}) lebih tinggi dari Harga Jual (Rp {{ formatNumber(itemForm.harga_jual) }}).
               </span>
             </div>
 
@@ -474,8 +489,8 @@
     </div>
 
     <!-- Modal Import Excel -->
-    <div v-if="showImportModal" class="modal-backdrop" @click.self="closeImportModal">
-      <div class="modal-content" style="max-width: 650px;">
+    <div v-if="showImportModal" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="handleBackdropClick($event, closeImportModal)">
+      <div class="modal-content" style="max-width: 650px;" @mousedown.stop @click.stop>
         <div class="modal-header">
           <div style="display: flex; align-items: center; gap: 8px;">
             <FileSpreadsheet :size="20" style="color: #10B981;" />
@@ -494,9 +509,10 @@
             </div>
             <ul style="margin: 0; padding-left: 18px;">
               <li>Kolom <strong>BARCODE (OPSIONAL)</strong>: Boleh diisi atau dikosongkan. Jika diisi, barcode langsung tersimpan ke database & siap digunakan untuk scan transaksi kasir/pembelian.</li>
+              <li>Kolom <strong>KODE</strong>: <strong style="color: #DC2626;">Wajib diisi untuk barang baru</strong> (misal: <strong>18</strong>, <strong>15</strong>). Barang baru otomatis digenerate dengan rumus <strong>C23 + Merk/NN + [Kode] + [Urutan: 001, 002...]</strong> (Contoh: <strong>C23PHI18001</strong>, <strong>C23PHI18002</strong>, dst).</li>
               <li>Kolom <strong>HARGA JUAL</strong>: Menentukan harga jual untuk barang baru atau memperbarui harga jual pada barang yang sudah ada. Jika dikosongkan pada barang yang sudah ada, harga jual lama tetap dipertahankan.</li>
               <li>Sistem akan memeriksa kecocokan berdasarkan <strong>Barcode</strong> atau <strong>Nama Barang</strong>.</li>
-              <li><strong>Jika barang sudah ada</strong>: Stok barang otomatis bertambah, MOD &amp; harga jual diperbarui, dan barcode otomatis tersimpan jika sebelumnya belum ada.</li>
+              <li><strong>Jika barang sudah ada</strong>: Stok barang otomatis bertambah, harga beli &amp; harga jual diperbarui, dan barcode otomatis tersimpan jika sebelumnya belum ada.</li>
               <li><strong>Jika barang belum ada</strong>: Barang baru otomatis dibuat dengan kode barang terstandar Toko Citra 23 beserta harga jualnya.</li>
               <li>Riwayat pasokan masuk otomatis tercatat rapi pada menu Pembelian.</li>
             </ul>
@@ -564,11 +580,20 @@
               <span>{{ importSuccessMessage }}</span>
             </div>
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
-              <span class="badge badge-success" style="padding: 6px 12px; font-size: 0.8rem;">
+              <span v-if="importSummary.created" class="badge badge-success" style="padding: 6px 12px; font-size: 0.8rem;">
                 {{ importSummary.created }} Barang Baru Dibuat
               </span>
-              <span class="badge badge-blue" style="padding: 6px 12px; font-size: 0.8rem;">
-                {{ importSummary.updated }} Barang Ditambah Stok, MOD &amp; Harga Jual
+              <span v-if="importSummary.stok_updated" class="badge badge-blue" style="padding: 6px 12px; font-size: 0.8rem;">
+                {{ importSummary.stok_updated }} Barang Ditambah Stok
+              </span>
+              <span v-if="importSummary.price_updated" class="badge" style="background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; padding: 6px 12px; font-size: 0.8rem;">
+                {{ importSummary.price_updated }} Barang Diperbarui Harga Saja (Stok 0)
+              </span>
+              <span v-if="importSummary.unchanged" class="badge" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; padding: 6px 12px; font-size: 0.8rem;">
+                {{ importSummary.unchanged }} Barang Tidak Ada Perubahan
+              </span>
+              <span v-if="!importSummary.stok_updated && !importSummary.price_updated && !importSummary.created && importSummary.updated" class="badge badge-blue" style="padding: 6px 12px; font-size: 0.8rem;">
+                {{ importSummary.updated }} Barang Diperbarui
               </span>
               <span v-if="importSummary.skipped" class="badge" style="background: #E2E8F0; color: #475569; padding: 6px 12px; font-size: 0.8rem;">
                 {{ importSummary.skipped }} Baris Dilewati (Kosong)
@@ -596,6 +621,161 @@
       </div>
     </div>
 
+    <!-- Modal Tabel & Kalkulator Rumus MOD -->
+    <div v-if="showModModal" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="handleBackdropClick($event, () => showModModal = false)" style="z-index: 1060;">
+      <div class="modal-content" style="max-width: 460px; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04);" @mousedown.stop @click.stop>
+        <!-- Modal Header -->
+        <div class="modal-header" style="padding: 14px 18px; border-bottom: 1px solid #E2E8F0; display: flex; justify-content: space-between; align-items: center; background: #FFF;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 32px; height: 32px; border-radius: 8px; background: #EEF2FF; color: #4F46E5; display: flex; align-items: center; justify-content: center;">
+              <Calculator :size="17" />
+            </div>
+            <div>
+              <h3 style="font-size: 1rem; font-weight: 700; color: #1E293B; margin: 0;">Kalkulator Cepat Rumus MOD</h3>
+              <p style="margin: 0; font-size: 0.72rem; color: #64748B;">Hitung & Konversi Sandi Modal Toko Citra 23</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-body" style="padding: 16px 18px; max-height: 70vh; overflow-y: auto;">
+          <!-- Mini Cheat-Sheet Row -->
+          <div style="display: flex; justify-content: space-between; align-items: center; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 6px 10px; margin-bottom: 14px; font-family: monospace; font-size: 0.725rem; color: #475569; overflow-x: auto;">
+            <span v-for="t in modTableData" :key="t.kode" style="white-space: nowrap; padding: 0 3px;">
+              <strong style="color: #0284C7;">{{ t.kode }}</strong>:{{ t.nilai }}
+            </span>
+          </div>
+
+          <!-- Form Inputs -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
+                Kode MOD / Angka
+              </label>
+              <input
+                v-model="modCalcInput"
+                type="text"
+                class="form-input"
+                placeholder="Mis: XT, CDT, 12500"
+                style="font-size: 0.85rem; padding: 6px 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;"
+              />
+            </div>
+
+            <div>
+              <label style="display: block; font-size: 0.75rem; font-weight: 700; color: #334155; margin-bottom: 4px;">
+                Harga Jual (Rp)
+              </label>
+              <input
+                v-model.number="modCalcHargaJual"
+                type="number"
+                min="0"
+                step="any"
+                class="form-input num"
+                placeholder="Mis: 2000, 25000"
+                style="font-size: 0.85rem; padding: 6px 10px;"
+              />
+            </div>
+          </div>
+
+          <!-- HASIL KALKULASI INTERAKTIF -->
+          <div v-if="modAnalysis">
+            <!-- Case A: Decode dari Kode MOD (misal XT -> 650 atau 6500) -->
+            <div v-if="modAnalysis.type === 'from_code'" style="background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 8px; padding: 12px 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                <div>
+                  <span style="font-size: 0.72rem; text-transform: uppercase; font-weight: 700; color: #166534; letter-spacing: 0.05em;">
+                    Estimasi Modal Riil
+                  </span>
+                  <div style="font-size: 1.35rem; font-weight: 800; color: #15803D; font-family: monospace; line-height: 1.2;">
+                    Rp {{ formatNumber(selectedCandidate || modAnalysis.bestMatch) }}
+                  </div>
+                </div>
+                <button
+                  v-if="showItemModal"
+                  type="button"
+                  @click="applyModToForm(selectedCandidate || modAnalysis.bestMatch)"
+                  class="btn btn-sm btn-primary"
+                  style="padding: 4px 10px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px;"
+                  title="Gunakan nilai ini ke kolom Harga Beli form"
+                >
+                  <Check :size="13" />
+                  <span>Terapkan</span>
+                </button>
+              </div>
+
+              <div v-if="modAnalysis.hargaJual > 0" style="font-size: 0.75rem; color: #166534; margin-bottom: 8px;">
+                Berdasarkan harga jual <strong>Rp {{ formatNumber(modAnalysis.hargaJual) }}</strong>, modal kode <strong>{{ modAnalysis.code }}</strong> diestimasi <strong>Rp {{ formatNumber(modAnalysis.bestMatch) }}</strong> (Laba: Rp {{ formatNumber(modAnalysis.hargaJual - (selectedCandidate || modAnalysis.bestMatch)) }}).
+              </div>
+              <div v-else style="font-size: 0.75rem; color: #64748B; margin-bottom: 8px;">
+                (Ketik Harga Jual di atas untuk memilih perkiraan modal yang paling tepat).
+              </div>
+
+              <!-- Chips Pilihan Kelipatan (Semua kemungkinan) -->
+              <div style="border-top: 1px dashed #86EFAC; padding-top: 8px; margin-top: 6px;">
+                <span style="font-size: 0.7rem; font-weight: 600; color: #166534; display: block; margin-bottom: 4px;">
+                  Semua Kemungkinan Nilai untuk {{ modAnalysis.code }}:
+                </span>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                  <button
+                    v-for="c in modAnalysis.candidates"
+                    :key="c"
+                    type="button"
+                    @click="selectedCandidate = c"
+                    :style="(selectedCandidate ? selectedCandidate === c : modAnalysis.bestMatch === c)
+                      ? 'background: #15803D; color: #FFF; border-color: #15803D; font-weight: 700;'
+                      : 'background: #FFF; color: #166534; border: 1px solid #BBF7D0;'"
+                    style="padding: 3px 8px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; font-family: monospace; transition: all 0.15s ease;"
+                  >
+                    Rp {{ formatNumber(c) }}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Case B: Encode dari Angka ke Kode MOD (misal 12500 -> CDT) -->
+            <div v-else-if="modAnalysis.type === 'from_number'" style="background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 8px; padding: 12px 14px;">
+              <span style="font-size: 0.72rem; text-transform: uppercase; font-weight: 700; color: #4338CA; letter-spacing: 0.05em; display: block; margin-bottom: 4px;">
+                Hasil Konversi Kode MOD
+              </span>
+              <div style="display: flex; gap: 14px; align-items: baseline; margin-bottom: 6px;">
+                <div>
+                  <span style="font-size: 0.75rem; color: #64748B;">Kode Singkat (Standard Toko):</span>
+                  <div style="font-size: 1.4rem; font-weight: 800; color: #4338CA; font-family: monospace;">
+                    {{ modAnalysis.shortCode }}
+                  </div>
+                </div>
+                <div v-if="modAnalysis.shortCode !== modAnalysis.fullCode">
+                  <span style="font-size: 0.75rem; color: #64748B;">Kode Lengkap:</span>
+                  <div style="font-size: 1.1rem; font-weight: 700; color: #64748B; font-family: monospace;">
+                    {{ modAnalysis.fullCode }}
+                  </div>
+                </div>
+              </div>
+              <div style="font-size: 0.75rem; color: #4338CA;">
+                Modal <strong>Rp {{ formatNumber(modAnalysis.inputNum) }}</strong> disingkat menjadi <strong>{{ modAnalysis.shortCode }}</strong> (nol di belakang dihilangkan sesuai acuan harga jual).
+              </div>
+            </div>
+          </div>
+
+          <!-- Petunjuk saat input kosong -->
+          <div v-else style="background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 8px; padding: 14px; text-align: center; color: #64748B; font-size: 0.78rem;">
+            <p style="margin: 0 0 4px 0; font-weight: 600; color: #334155;">Contoh Penggunaan:</p>
+            <ul style="margin: 0; padding-left: 18px; text-align: left; line-height: 1.5;">
+              <li>Ketik kode <strong>XT</strong> &amp; jual <strong>2000</strong> &rarr; hasil modal <strong>Rp 650</strong>.</li>
+              <li>Ketik kode <strong>XT</strong> &amp; jual <strong>10000</strong> &rarr; hasil modal <strong>Rp 6.500</strong>.</li>
+              <li>Ketik kode <strong>CDT</strong> &amp; jual <strong>25000</strong> &rarr; hasil modal <strong>Rp 12.500</strong>.</li>
+              <li>Ketik angka <strong>12500</strong> &rarr; kode MOD: <strong>CDT</strong>.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="modal-footer" style="padding: 10px 18px; border-top: 1px solid #E2E8F0; display: flex; justify-content: flex-end; background: #F8FAFC;">
+          <button type="button" @click="showModModal = false" class="btn btn-secondary btn-sm" style="padding: 6px 18px;">
+            Tutup
+          </button>
+        </div>
+      </div>
+    </div>
 
   </AppLayout>
 </template>
@@ -607,9 +787,9 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
+import { onBackdropMouseDown, handleBackdropClick } from '../utils/modalHelper';
 import { db } from '../db/clientDb';
 import { isOnline, queueOfflineAction } from '../services/syncManager';
-import { hargaToMod, modToHarga } from '../utils/modHelper';
 import {
   Package,
   Plus,
@@ -626,7 +806,10 @@ import {
   Barcode,
   Camera,
   ScanLine,
-  Sparkles
+  Sparkles,
+  KeyRound,
+  Calculator,
+  Check
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -634,16 +817,122 @@ const items = ref([]);
 const categories = ref([]);
 const loading = ref(true);
 
-// Deteksi apakah Harga Beli (MOD) > Harga Jual
+// State Modal & Kalkulator Cepat Rumus MOD
+const showModModal = ref(false);
+const modCalcInput = ref('');
+const modCalcHargaJual = ref(null);
+const selectedCandidate = ref(null);
+
+const modTableData = [
+  { kode: 'C', nilai: '1' },
+  { kode: 'D', nilai: '2' },
+  { kode: 'L', nilai: '3' },
+  { kode: 'S', nilai: '4' },
+  { kode: 'T', nilai: '5' },
+  { kode: 'X', nilai: '6' },
+  { kode: 'A', nilai: '7' },
+  { kode: 'F', nilai: '8' },
+  { kode: 'Z', nilai: '9' },
+  { kode: 'B', nilai: '0' }
+];
+
+const letterToNum = { 'C': '1', 'D': '2', 'L': '3', 'S': '4', 'T': '5', 'X': '6', 'A': '7', 'F': '8', 'Z': '9', 'B': '0' };
+const numToLetter = { '1': 'C', '2': 'D', '3': 'L', '4': 'S', '5': 'T', '6': 'X', '7': 'A', '8': 'F', '9': 'Z', '0': 'B' };
+
+const openModModal = (source = 'header') => {
+  if (source === 'form') {
+    if (itemForm.harga_jual && Number(itemForm.harga_jual) > 0) {
+      modCalcHargaJual.value = Number(itemForm.harga_jual);
+    }
+  }
+  selectedCandidate.value = null;
+  showModModal.value = true;
+};
+
+const applyModToForm = (val) => {
+  if (val && !isNaN(val)) {
+    itemForm.harga_beli = Number(val);
+  }
+  showModModal.value = false;
+};
+
+const modAnalysis = computed(() => {
+  const raw = (modCalcInput.value || '').trim();
+  if (!raw) return null;
+
+  const hargaJual = Number(modCalcHargaJual.value) || 0;
+
+  // Case A: Input adalah Angka (misal: 12500 atau 650)
+  if (/^[0-9., ]+$/.test(raw)) {
+    const digits = raw.replace(/[^0-9]/g, '');
+    if (!digits || digits === '0') return null;
+
+    const shortDigits = digits.replace(/0+$/, '');
+    const shortCode = shortDigits.split('').map(d => numToLetter[d] || '?').join('');
+    const fullCode = digits.split('').map(d => numToLetter[d] || '?').join('');
+    const numVal = parseInt(digits, 10);
+
+    return {
+      type: 'from_number',
+      inputNum: numVal,
+      shortCode,
+      fullCode,
+      hargaJual
+    };
+  }
+
+  // Case B: Input adalah Huruf (Kode MOD, misal: XT, CDT, T)
+  const letters = raw.toUpperCase().replace(/[^A-Z]/g, '');
+  if (!letters) return null;
+
+  const digits = letters.split('').map(c => letterToNum[c] !== undefined ? letterToNum[c] : '').join('');
+  if (!digits) return null;
+
+  const baseNum = parseInt(digits, 10);
+  if (isNaN(baseNum) || baseNum <= 0) return null;
+
+  // Hasilkan semua kelipatan 10^k yang masuk akal di Indonesia
+  const candidates = [];
+  for (let k = 0; k <= 6; k++) {
+    const val = baseNum * Math.pow(10, k);
+    if (val >= 10 && val <= 100000000) {
+      candidates.push(val);
+    }
+  }
+
+  // Cari yang paling cocok dengan harga jual
+  let bestMatch = null;
+  if (hargaJual > 0) {
+    const valid = candidates.filter(c => c <= hargaJual);
+    if (valid.length > 0) {
+      bestMatch = valid[valid.length - 1]; // nilai terbesar <= hargaJual
+    } else {
+      bestMatch = candidates[0];
+    }
+  } else {
+    bestMatch = candidates.find(c => c >= 1000 && c <= 100000) || candidates[0];
+  }
+
+  return {
+    type: 'from_code',
+    code: letters,
+    digits,
+    candidates,
+    bestMatch,
+    hargaJual
+  };
+});
+
+// Deteksi apakah Harga Beli > Harga Jual
 const isModalLebihTinggi = (item) => {
-  const modal = parseFloat(item.modal_harga_beli || 0) || modToHarga(item.MOD || '');
+  const modal = parseFloat(item.modal_harga_beli || 0);
   const jual = parseFloat(item.harga_jual || 0);
   return modal > 0 && modal > jual;
 };
 
-// Form Tambah/Edit Barang: Cek MOD vs Harga Jual
+// Form Tambah/Edit Barang: Cek Harga Beli vs Harga Jual
 const isFormModalLebihTinggi = computed(() => {
-  const modal = itemForm.harga_beli ? parseFloat(itemForm.harga_beli) : modToHarga(itemForm.MOD);
+  const modal = parseFloat(itemForm.harga_beli || 0);
   const jual = parseFloat(itemForm.harga_jual || 0);
   return modal > 0 && modal > jual;
 });
@@ -775,13 +1064,11 @@ const checkBarcodeDuplicate = async (code) => {
       existingBarangInfo.value = res.data.barang;
       const b = res.data.barang;
       if (!editingId.value) {
-        // Otomatis isi nama barang, kategori, merk, harga beli (modal), MOD, dan harga jual jika sudah terdaftar
+        // Otomatis isi nama barang, kategori, merk, harga beli (modal), dan harga jual jika sudah terdaftar
         itemForm.nama_barang = b.nama_barang;
         if (b.kategori_id) itemForm.kategori_id = b.kategori_id;
         itemForm.merk = b.merk || '';
-        const modalNum = b.modal_harga_beli ? parseFloat(b.modal_harga_beli) : (b.MOD ? modToHarga(b.MOD) : 0);
-        itemForm.harga_beli = modalNum;
-        itemForm.MOD = b.MOD || (modalNum > 0 ? hargaToMod(modalNum) : '');
+        itemForm.harga_beli = b.modal_harga_beli ? parseFloat(b.modal_harga_beli) : 0;
         itemForm.harga_jual = Number(b.harga_jual || 0);
         itemForm.keterangan = b.keterangan || '';
         editingId.value = b.id;
@@ -811,9 +1098,7 @@ const loadExistingBarangData = () => {
   itemForm.nama_barang = b.nama_barang;
   if (b.kategori_id) itemForm.kategori_id = b.kategori_id;
   itemForm.merk = b.merk || '';
-  const modalNum = b.modal_harga_beli ? parseFloat(b.modal_harga_beli) : (b.MOD ? modToHarga(b.MOD) : 0);
-  itemForm.harga_beli = modalNum;
-  itemForm.MOD = b.MOD || (modalNum > 0 ? hargaToMod(modalNum) : '');
+  itemForm.harga_beli = b.modal_harga_beli ? parseFloat(b.modal_harga_beli) : 0;
   itemForm.harga_jual = Number(b.harga_jual || 0);
   itemForm.keterangan = b.keterangan || '';
   editingId.value = b.id;
@@ -960,30 +1245,23 @@ const itemForm = reactive({
   nama_barang: '',
   kategori_id: '',
   merk: '',
+  sub_kode: '',
   stok_awal: 0,
   harga_beli: 0,
-  MOD: '',
   harga_jual: 0,
   keterangan: ''
 });
 
-const onItemHargaBeliInput = () => {
-  if (itemForm.harga_beli > 0) {
-    itemForm.MOD = hargaToMod(itemForm.harga_beli);
-  } else {
-    itemForm.MOD = '';
-  }
-};
-
-const onItemModInput = () => {
-  if (itemForm.MOD && itemForm.MOD.trim()) {
-    itemForm.MOD = itemForm.MOD.toUpperCase();
-    const calculated = modToHarga(itemForm.MOD);
-    if (calculated > 0) {
-      itemForm.harga_beli = calculated;
-    }
-  }
-};
+const brandPrefixPreview = computed(() => {
+  const m = itemForm.merk ? itemForm.merk.trim() : '';
+  if (!m) return 'NN';
+  const cleaned = m.replace(/[^a-zA-Z]/g, '').toUpperCase();
+  if (!cleaned) return 'NN';
+  const noNameAliases = ['NONAME', 'NONNAME', 'NON', 'NN', 'NOBRAND', 'NONMERK', 'TANPAMERK', 'TANPABRAND', 'NOMERK'];
+  if (noNameAliases.includes(cleaned) || cleaned.startsWith('NONAME')) return 'NN';
+  if (cleaned.length <= 3) return cleaned.padEnd(3, 'X');
+  return cleaned.substring(0, 3);
+});
 
 let searchTimeout = null;
 const onSearchChange = () => {
@@ -1035,7 +1313,7 @@ const fetchBarang = async () => {
       if (filters.low_stock) {
         filtered = filtered.filter(b => (b.stok_akhir || 0) <= 5);
       }
-      filtered.sort((a, b) => (a.nama_barang || '').localeCompare(b.nama_barang || '', 'id', { sensitivity: 'base' }));
+      filtered.sort((a, b) => (a.nama_barang || '').localeCompare(b.nama_barang || '', 'id', { numeric: true, sensitivity: 'base' }));
       pagination.total = filtered.length;
       pagination.totalPages = Math.ceil(filtered.length / pagination.limit) || 1;
       const start = (pagination.page - 1) * pagination.limit;
@@ -1086,7 +1364,7 @@ const fetchBarang = async () => {
       if (filters.low_stock) {
         filtered = filtered.filter(b => (b.stok_akhir || 0) <= 5);
       }
-      filtered.sort((a, b) => (a.nama_barang || '').localeCompare(b.nama_barang || '', 'id', { sensitivity: 'base' }));
+      filtered.sort((a, b) => (a.nama_barang || '').localeCompare(b.nama_barang || '', 'id', { numeric: true, sensitivity: 'base' }));
       pagination.total = filtered.length;
       pagination.totalPages = Math.ceil(filtered.length / pagination.limit) || 1;
       const start = (pagination.page - 1) * pagination.limit;
@@ -1111,9 +1389,9 @@ const openCreateModal = () => {
   itemForm.nama_barang = '';
   itemForm.kategori_id = categories.value.length > 0 ? categories.value[0].id : '';
   itemForm.merk = '';
+  itemForm.sub_kode = '';
   itemForm.stok_awal = 0;
   itemForm.harga_beli = 0;
-  itemForm.MOD = '';
   itemForm.harga_jual = 0;
   itemForm.keterangan = '';
   itemModalError.value = '';
@@ -1129,12 +1407,11 @@ const openCreateModal = () => {
 const openEditModal = (item) => {
   stopCameraScanner();
   editingId.value = item.id;
-  itemForm.barcode = item.barcode || '';
+  itemForm.barcode = (item.barcode && item.barcode !== 'null' && item.barcode !== '-') ? item.barcode : '';
   itemForm.nama_barang = item.nama_barang;
   itemForm.kategori_id = item.kategori_id;
   itemForm.merk = item.merk;
-  itemForm.harga_beli = item.modal_harga_beli ? parseFloat(item.modal_harga_beli) : (item.MOD ? modToHarga(item.MOD) : 0);
-  itemForm.MOD = item.MOD || (itemForm.harga_beli > 0 ? hargaToMod(itemForm.harga_beli) : '');
+  itemForm.harga_beli = item.modal_harga_beli ? parseFloat(item.modal_harga_beli) : 0;
   itemForm.harga_jual = Number(item.harga_jual);
   itemForm.keterangan = item.keterangan || '';
   itemModalError.value = '';
@@ -1154,6 +1431,10 @@ const saveBarang = async () => {
     itemModalError.value = barcodeCheckWarning.value;
     return;
   }
+  if (!editingId.value && (!itemForm.sub_kode || !itemForm.sub_kode.trim())) {
+    itemModalError.value = 'Kode barang (sub-kode) wajib diisi (contoh: 18, 15).';
+    return;
+  }
   itemSaving.value = true;
   itemModalError.value = '';
 
@@ -1166,7 +1447,6 @@ const saveBarang = async () => {
         kategori_id: itemForm.kategori_id,
         merk: itemForm.merk,
         modal_harga_beli: itemForm.harga_beli,
-        MOD: itemForm.MOD,
         harga_jual: itemForm.harga_jual,
         keterangan: itemForm.keterangan
       });
@@ -1177,13 +1457,34 @@ const saveBarang = async () => {
         `Ubah Barang: ${itemForm.nama_barang}`
       );
     } else {
+      const existingSameName = await db.barang
+        .filter(b => (b.nama_barang || '').trim().toLowerCase() === (itemForm.nama_barang || '').trim().toLowerCase())
+        .first();
+      if (existingSameName) {
+        itemModalError.value = `Barang dengan nama "${itemForm.nama_barang.trim()}" sudah ada di database [${existingSameName.kode_barang}]. Untuk menambah stok, silakan gunakan tombol "+ Stok" pada baris barang tersebut.`;
+        itemSaving.value = false;
+        return;
+      }
+
       const tempId = 'offline_b_' + Date.now();
       const cleanMerk = itemForm.merk ? itemForm.merk.trim().replace(/[^a-zA-Z]/g, '').toUpperCase() : '';
+      const noNameAliases = ['NONAME', 'NONNAME', 'NON', 'NN', 'NOBRAND', 'NONMERK', 'TANPAMERK', 'TANPABRAND', 'NOMERK'];
       let merkPrefix = 'NN';
-      if (cleanMerk) {
+      if (cleanMerk && !noNameAliases.includes(cleanMerk) && !cleanMerk.startsWith('NONAME')) {
         merkPrefix = cleanMerk.length >= 3 ? cleanMerk.substring(0, 3) : cleanMerk.padEnd(3, 'X');
       }
-      const newKode = 'C23' + merkPrefix + Math.floor(10000 + Math.random() * 90000);
+      const cleanSub = (itemForm.sub_kode || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const prefix = 'C23' + merkPrefix + cleanSub;
+
+      const localMatches = await db.barang.filter(b => (b.kode_barang || '').startsWith(prefix)).toArray();
+      let maxSeq = 0;
+      for (const m of localMatches) {
+        const num = parseInt(m.kode_barang.substring(prefix.length), 10);
+        if (!isNaN(num) && num > maxSeq) maxSeq = num;
+      }
+      const nextSeq = maxSeq + 1;
+      const padLen = cleanSub ? 3 : 5;
+      const newKode = prefix + String(nextSeq).padStart(padLen, '0');
       await db.barang.add({
         id: tempId,
         kode_barang: newKode,
@@ -1193,7 +1494,6 @@ const saveBarang = async () => {
         merk: itemForm.merk,
         stok_akhir: Number(itemForm.stok_awal) || 0,
         modal_harga_beli: itemForm.harga_beli,
-        MOD: itemForm.MOD,
         harga_jual: itemForm.harga_jual,
         keterangan: itemForm.keterangan,
         is_offline: true

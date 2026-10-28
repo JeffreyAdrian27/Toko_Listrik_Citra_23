@@ -445,7 +445,6 @@
                 <th>Tanggal</th>
                 <th>Kode</th>
                 <th>Nama Produk</th>
-                <th style="text-align: center; width: 90px;">MOD</th>
                 <th style="text-align: right;">Harga Jual</th>
                 <th style="text-align: center;">Qty</th>
                 <th style="text-align: right;">Omzet</th>
@@ -459,11 +458,6 @@
                 <td style="font-size: 0.8rem;">{{ formatDate(item.tanggal) }}</td>
                 <td><span class="badge badge-blue">{{ item.kode_barang }}</span></td>
                 <td style="font-weight: 600;">{{ item.nama_barang }}</td>
-                <td style="text-align: center;">
-                  <span class="badge" style="background: #EBF3FF; color: #005CE6; font-family: monospace; font-weight: 800; font-size: 0.85rem;">
-                    {{ item.harga_modal || '-' }}
-                  </span>
-                </td>
                 <td class="num" style="text-align: right;">Rp {{ formatNumber(item.harga_jual) }}</td>
                 <td class="num" style="text-align: center; font-weight: 700;">{{ item.jumlah }}</td>
                 <td class="num" style="text-align: right; font-weight: 700; color: var(--color-primary);">
@@ -582,8 +576,8 @@
     </div>
 
     <!-- Modal Void Transaksi (Admin Only, FR-JUAL-9 & FR-JUAL-10) -->
-    <div v-if="showVoidModal" class="modal-backdrop" @click.self="closeVoidModal">
-      <div class="modal-content" style="max-width: 500px;">
+    <div v-if="showVoidModal" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="handleBackdropClick($event, closeVoidModal)">
+      <div class="modal-content" style="max-width: 500px;" @mousedown.stop @click.stop>
         <div class="modal-header" style="background: var(--status-danger-bg); border-bottom-color: var(--status-danger-border);">
           <h3 style="color: var(--status-danger); display: flex; align-items: center; gap: 8px;">
             <AlertTriangle :size="20" />
@@ -644,6 +638,7 @@ import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import { useAuthStore } from '../stores/auth';
 import api from '../api';
+import { onBackdropMouseDown, handleBackdropClick } from '../utils/modalHelper';
 import { db } from '../db/clientDb';
 import { isOnline, queueOfflineAction, searchLocalBarang, findLocalBarangByBarcode } from '../services/syncManager';
 import {

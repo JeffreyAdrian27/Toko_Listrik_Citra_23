@@ -75,6 +75,15 @@ const updateKategori = async (req, res) => {
   }
 
   try {
+    const [existing] = await pool.execute('SELECT nama_kategori FROM kategori WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Kategori tidak ditemukan.' });
+    }
+
+    if (existing[0].nama_kategori.trim() === nama_kategori.trim()) {
+      return res.json({ message: 'Tidak ada perubahan pada nama kategori.' });
+    }
+
     await pool.execute(
       'UPDATE kategori SET nama_kategori = ? WHERE id = ?',
       [nama_kategori.trim(), id]

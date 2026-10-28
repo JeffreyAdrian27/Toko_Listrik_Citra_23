@@ -19,9 +19,9 @@
         <div style="display: flex; align-items: center; gap: 10px;">
           <Truck :size="20" style="color: var(--color-primary);" />
           <div>
-            <h3 class="card-title">Input Pembelian Barang &amp; Pembaruan MOD</h3>
+            <h3 class="card-title">Input Pembelian Barang &amp; Pasokan Stok</h3>
             <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">
-              Pilih barang dan kode MOD dari Master MOD untuk update stok &amp; harga modal otomatis.
+              Pilih barang untuk update stok &amp; harga beli modal otomatis.
             </p>
           </div>
         </div>
@@ -171,8 +171,8 @@
                         {{ item.merk }}
                       </span>
                     </div>
-                    <div style="font-size: 0.8rem; color: var(--text-muted);">
-                      MOD Sekarang: <strong style="font-family: monospace; color: var(--color-primary);">{{ item.MOD || '-' }}</strong>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 3px;">
+                      Harga Beli Sekarang: <strong style="color: var(--color-primary);">{{ (item.modal_harga_beli && Number(item.modal_harga_beli) > 0) ? ('Rp ' + formatNumber(item.modal_harga_beli)) : '-' }}</strong>
                     </div>
                   </div>
                 </div>
@@ -186,9 +186,9 @@
                 <div style="font-weight: 800; font-size: 1rem; color: var(--text-main);">
                   {{ selectedItem.nama_barang }}
                 </div>
-                <div style="display: flex; gap: 14px; margin-top: 6px; font-size: 0.825rem;">
+                <div style="display: flex; gap: 18px; margin-top: 6px; font-size: 0.85rem; align-items: center;">
                   <span>Kode: <strong>{{ selectedItem.kode_barang }}</strong></span>
-                  <span>MOD Lama: <strong style="font-family: monospace; color: var(--color-primary); font-size: 0.95rem;">{{ selectedItem.MOD || '-' }}</strong></span>
+                  <span>Sisa Stok: <strong style="color: #059669;">{{ selectedItem.stok_akhir }} unit</strong></span>
                 </div>
               </div>
               <div v-else style="color: var(--text-subtle); font-size: 0.85rem; padding-top: 6px;">
@@ -197,17 +197,18 @@
             </div>
           </div>
 
-          <!-- Format Kolom: HARGA LAMA & HARGA BELI (AUTO-GENERATE MOD) -->
+          <!-- Format Kolom Form Pembelian (Tanpa Box Generate) -->
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-top: 14px;">
+            <!-- Kolom 1: HARGA LAMA -->
             <div class="form-group">
-              <label class="form-label" style="color: #475569; font-weight: 700;">HARGA LAMA (MOD)</label>
-              <div class="form-input" style="background: #F1F5F9; font-family: monospace; font-weight: 800; font-size: 1.05rem; text-align: center; color: var(--color-primary); display: flex; align-items: center; justify-content: center; height: 42px;">
-                {{ selectedItem ? (selectedItem.MOD || '-') : '-' }}
+              <label class="form-label" style="color: #475569; font-weight: 700;">HARGA LAMA</label>
+              <div class="form-input" style="background: #F1F5F9; font-weight: 700; font-size: 1rem; text-align: center; color: var(--color-primary); display: flex; align-items: center; justify-content: center; height: 42px;">
+                {{ selectedItem?.modal_harga_beli && Number(selectedItem.modal_harga_beli) > 0 ? ('Rp ' + formatNumber(selectedItem.modal_harga_beli)) : '-' }}
               </div>
-              <p class="form-help">Kode MOD satuan sebelumnya.</p>
+              <p class="form-help">Harga beli satuan sebelumnya.</p>
             </div>
 
-            <!-- Input Harga Beli Modal Satuan (Rp) -->
+            <!-- Kolom 2: HARGA BELI MODAL (RP) * -->
             <div class="form-group">
               <label class="form-label" for="harga_beli_satuan" style="font-weight: 700;">
                 HARGA BELI MODAL (RP) <span style="color: red;">*</span>
@@ -217,36 +218,16 @@
                 v-model.number="form.harga_beli"
                 type="number"
                 min="0"
-                step="100"
+                step="any"
                 class="form-input num"
-                placeholder="Contoh: 54000 atau 20000"
+                placeholder="0"
                 required
                 :disabled="!selectedItem"
               />
-              <p class="form-help">
-                <span v-if="form.harga_beli > 0" style="color: #059669; font-weight: 600;">
-                  Terbaca: Rp {{ formatNumber(form.harga_beli) }}
-                </span>
-                <span v-else>Harga kulakan/beli asli dari supplier.</span>
-              </p>
+              <p class="form-help">Harga kulakan/beli asli dari supplier.</p>
             </div>
 
-            <!-- Kode MOD Ter-Generate Otomatis -->
-            <div class="form-group">
-              <label class="form-label" style="color: #475569; font-weight: 700;">
-                MOD BARU (AUTO-GENERATE)
-              </label>
-              <div class="form-input" style="background: #EEF2FF; border: 1px solid #C7D2FE; font-family: monospace; font-weight: 800; font-size: 1.15rem; text-align: center; color: #4F46E5; display: flex; align-items: center; justify-content: center; height: 42px;">
-                {{ generatedMod || '-' }}
-              </div>
-              <p class="form-help">
-                <span v-if="generatedMod" style="color: #4F46E5; font-weight: 600;">
-                  ✨ Rumus MOD otomatis.
-                </span>
-                <span v-else>Otomatis muncul dari harga beli.</span>
-              </p>
-            </div>
-
+            <!-- Kolom 3: JUMLAH MASUK (UNIT) * -->
             <div class="form-group">
               <label class="form-label" for="jumlah_masuk" style="font-weight: 700;">JUMLAH MASUK (UNIT) <span style="color: red;">*</span></label>
               <input
@@ -258,14 +239,10 @@
                 required
                 :disabled="!selectedItem"
               />
-              <p class="form-help">
-                <span v-if="form.harga_beli > 0 && form.jumlah_masuk > 0" style="color: #059669; font-weight: 700;">
-                  Total: Rp {{ formatNumber(form.harga_beli * form.jumlah_masuk) }}
-                </span>
-                <span v-else>Jumlah barang masuk.</span>
-              </p>
+              <p class="form-help">Jumlah barang masuk.</p>
             </div>
 
+            <!-- Kolom 4: TANGGAL PEMBELIAN -->
             <div class="form-group">
               <label class="form-label" for="tgl_beli" style="font-weight: 700;">TANGGAL PEMBELIAN</label>
               <input
@@ -291,7 +268,7 @@
               :disabled="saving || !selectedItem || !form.harga_beli || form.harga_beli <= 0 || form.jumlah_masuk <= 0"
             >
               <Check :size="18" />
-              <span>{{ saving ? 'Menyimpan...' : 'Simpan Pembelian & Update MOD' }}</span>
+              <span>{{ saving ? 'Menyimpan...' : 'Simpan Transaksi Pembelian' }}</span>
             </button>
           </div>
         </form>
@@ -303,7 +280,7 @@
       <div class="card-header" style="display: flex; flex-direction: column; gap: 14px; align-items: stretch;">
         <!-- Baris Atas: Judul dan Total Pasokan -->
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <h3 class="card-title" style="margin: 0;">Tabel Riwayat Pembelian &amp; Perubahan MOD</h3>
+          <h3 class="card-title" style="margin: 0;">Tabel Riwayat Pembelian</h3>
           <div style="font-weight: 700; color: var(--color-primary); font-size: 0.9rem;">
             Total Pasokan: {{ historyData.total_qty }} unit ({{ historyData.total_transaksi }} transaksi)
           </div>
@@ -337,7 +314,7 @@
               <th>Kode Barang</th>
               <th>Nama Produk</th>
               <!-- Kolom persis seperti di foto 2 -->
-              <th style="text-align: center; width: 140px; background: #EEF4FF; color: var(--color-primary); font-weight: 800;">
+              <th style="text-align: center; width: 150px; background: #EEF4FF; color: var(--color-primary); font-weight: 800;">
                 HARGA LAMA
               </th>
               <th style="text-align: center; width: 190px; background: #EEF4FF; color: var(--color-primary); font-weight: 800;">
@@ -355,19 +332,19 @@
               <td style="font-size: 0.8rem;">{{ formatDate(row.tanggal) }}</td>
               <td><span class="badge badge-blue">{{ row.kode_barang }}</span></td>
               <td style="font-weight: 600;">{{ row.nama_barang }}</td>
-              <!-- Nilai Harga Lama (Kode Huruf MOD) -->
+              <!-- Nilai Harga Lama (Rp) -->
               <td style="text-align: center;">
-                <span class="badge" style="background: #F1F5F9; color: #475569; font-family: monospace; font-weight: 800; font-size: 0.95rem; padding: 4px 10px;">
-                  {{ row.harga_lama || '-' }}
+                <span class="badge" style="background: #F1F5F9; color: #334155; font-weight: 700; font-size: 0.85rem; padding: 4px 10px;">
+                  {{ formatHargaCell(row.harga_lama) }}
                 </span>
               </td>
-              <!-- Nilai Harga Baru Modal Satuan (Kode Huruf MOD) -->
+              <!-- Nilai Harga Baru Modal Satuan (Rp) -->
               <td style="text-align: center;">
                 <span
                   class="badge"
-                  :style="(row.harga_baru_modal_satuan && row.harga_baru_modal_satuan.trim() && row.harga_baru_modal_satuan !== '-') ? 'background: #EBF3FF; color: #005CE6; font-family: monospace; font-weight: 800; font-size: 0.95rem; padding: 4px 12px; border: 1px solid var(--color-primary-border);' : 'background: #F1F5F9; color: #475569; font-family: monospace; font-weight: 800; font-size: 0.95rem; padding: 4px 10px;'"
+                  :style="hasHargaBaru(row) ? 'background: #EBF3FF; color: #005CE6; border: 1px solid var(--color-primary-border); font-weight: 800; font-size: 0.85rem; padding: 4px 12px;' : 'background: #F1F5F9; color: #64748B; font-weight: 700; font-size: 0.85rem; padding: 4px 10px;'"
                 >
-                  {{ (row.harga_baru_modal_satuan && row.harga_baru_modal_satuan.trim()) ? row.harga_baru_modal_satuan : '-' }}
+                  {{ formatHargaBaruCell(row) }}
                 </span>
               </td>
               <td class="num" style="text-align: center; font-weight: 700; color: var(--status-success);">
@@ -450,8 +427,8 @@
     </div>
 
     <!-- Modal Edit Pembelian -->
-    <div v-if="showEditModal" class="modal-backdrop" @click.self="closeEditModal">
-      <div class="modal-content" style="max-width: 480px;">
+    <div v-if="showEditModal" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="handleBackdropClick($event, closeEditModal)">
+      <div class="modal-content" style="max-width: 480px;" @mousedown.stop @click.stop>
         <div class="modal-header">
           <div style="display: flex; align-items: center; gap: 8px;">
             <Edit2 :size="20" style="color: var(--color-primary);" />
@@ -468,7 +445,7 @@
               <div style="font-weight: 700; color: #0F172A; font-size: 0.95rem;">{{ editingRow?.nama_barang }}</div>
               <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
                 Kode: <span class="badge badge-blue">{{ editingRow?.kode_barang }}</span>
-                &bull; MOD Satuan: <strong style="font-family: monospace;">{{ editingRow?.harga_baru_modal_satuan || '-' }}</strong>
+                &bull; Harga Beli Satuan: <strong style="color: var(--color-primary);">Rp {{ formatNumber(editingRow?.total_pembayaran / (editingRow?.jumlah_masuk || 1)) }}</strong>
               </div>
             </div>
 
@@ -514,8 +491,8 @@
     </div>
 
     <!-- Modal Konfirmasi Hapus / Batal Pembelian -->
-    <div v-if="deletingRow" class="modal-backdrop" @click.self="deletingRow = null">
-      <div class="modal-content" style="max-width: 460px;">
+    <div v-if="deletingRow" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="handleBackdropClick($event, () => deletingRow = null)">
+      <div class="modal-content" style="max-width: 460px;" @mousedown.stop @click.stop>
         <div class="modal-header" style="background: var(--status-danger-bg); border-bottom-color: var(--status-danger-border);">
           <div style="display: flex; align-items: center; gap: 8px;">
             <AlertTriangle :size="20" style="color: #DC2626;" />
@@ -563,9 +540,9 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
+import { onBackdropMouseDown, handleBackdropClick } from '../utils/modalHelper';
 import { db } from '../db/clientDb';
 import { isOnline, queueOfflineAction, searchLocalBarang, findLocalBarangByBarcode } from '../services/syncManager';
-import { hargaToMod, modToHarga } from '../utils/modHelper';
 import {
   Truck,
   Search,
@@ -604,10 +581,6 @@ const form = reactive({
   harga_beli: 0,
   jumlah_masuk: 1,
   tanggal: new Date().toISOString().split('T')[0]
-});
-
-const generatedMod = computed(() => {
-  return hargaToMod(form.harga_beli);
 });
 
 const monthNames = [
@@ -658,6 +631,32 @@ const onFilterChange = () => {
 const formatNumber = (num) => {
   if (num === null || num === undefined || isNaN(num)) return '0';
   return new Intl.NumberFormat('id-ID').format(num);
+};
+
+const formatHargaCell = (val) => {
+  if (!val || val === '-' || val === 'null' || val === 'undefined') return '-';
+  const num = parseFloat(val);
+  if (!isNaN(num) && num > 0) {
+    return 'Rp ' + formatNumber(num);
+  }
+  return '-';
+};
+
+const hasHargaBaru = (row) => {
+  const val = row?.harga_baru_modal_satuan;
+  if (!val || val === '-' || val === 'null' || val === 'undefined') return false;
+  const num = parseFloat(val);
+  return !isNaN(num) && num > 0;
+};
+
+const formatHargaBaruCell = (row) => {
+  const val = row?.harga_baru_modal_satuan;
+  if (!val || val === '-' || val === 'null' || val === 'undefined') return '-';
+  const num = parseFloat(val);
+  if (!isNaN(num) && num > 0) {
+    return 'Rp ' + formatNumber(num);
+  }
+  return '-';
 };
 
 let searchTimeout = null;
@@ -741,7 +740,7 @@ const processBarcodeScan = async (code) => {
       playScanBeep();
       selectItem(found);
       const modalRp = form.harga_beli ? `Rp ${formatNumber(form.harga_beli)}` : 'Rp 0';
-      barcodeAlertSuccess.value = `Barang [${found.kode_barang}] ${found.nama_barang} otomatis terpilih! Modal lama: ${modalRp} (MOD: ${found.MOD || '-'}).`;
+      barcodeAlertSuccess.value = `Barang [${found.kode_barang}] ${found.nama_barang} otomatis terpilih! Modal: ${modalRp}.`;
       barcodeAlertWarning.value = '';
       barcodeScanInput.value = '';
       nextTick(() => {
@@ -868,8 +867,6 @@ const selectItem = (item) => {
   
   if (item.modal_harga_beli && Number(item.modal_harga_beli) > 0) {
     form.harga_beli = Number(item.modal_harga_beli);
-  } else if (item.MOD) {
-    form.harga_beli = modToHarga(item.MOD);
   } else {
     form.harga_beli = 0;
   }
@@ -906,7 +903,6 @@ const submitPembelian = async () => {
       const payload = {
         barang_id: selectedItem.value.id,
         harga_beli: form.harga_beli,
-        harga_baru_modal_satuan: generatedMod.value,
         jumlah_masuk: form.jumlah_masuk,
         tanggal: form.tanggal
       };
@@ -925,12 +921,11 @@ const submitPembelian = async () => {
         newStok = (localItem.stok_akhir || 0) + form.jumlah_masuk;
         await db.barang.update(localItem.id, {
           stok_akhir: newStok,
-          modal_harga_beli: form.harga_beli,
-          MOD: generatedMod.value
+          modal_harga_beli: form.harga_beli
         });
       }
 
-      successMsg.value = `[MODE OFFLINE] Pembelian [${selectedItem.value.nama_barang}] +${form.jumlah_masuk} unit berhasil dicatat di perangkat! Sisa stok lokal: ${newStok} unit, MOD baru: "${generatedMod.value}". Data akan disinkronkan ke server saat online.`;
+      successMsg.value = `[MODE OFFLINE] Pembelian [${selectedItem.value.nama_barang}] +${form.jumlah_masuk} unit berhasil dicatat di perangkat! Sisa stok lokal: ${newStok} unit. Data akan disinkronkan ke server saat online.`;
 
       // Reset form
       searchQuery.value = '';
@@ -954,21 +949,19 @@ const submitPembelian = async () => {
     const res = await api.post('/pembelian', {
       barang_id: selectedItem.value.id,
       harga_beli: form.harga_beli,
-      harga_baru_modal_satuan: generatedMod.value,
       jumlah_masuk: form.jumlah_masuk,
       tanggal: form.tanggal
     });
 
-    successMsg.value = `Pembelian berhasil dicatat! Stok [${selectedItem.value.nama_barang}] bertambah ${form.jumlah_masuk} unit (Sisa: ${res.data.data.stok_akhir} unit). MOD otomatis dibuat menjadi "${generatedMod.value}".`;
+    successMsg.value = `Pembelian berhasil dicatat! Stok [${selectedItem.value.nama_barang}] bertambah ${form.jumlah_masuk} unit (Sisa: ${res.data.data.stok_akhir} unit). Harga Beli Satuan: Rp ${formatNumber(form.harga_beli)}.`;
 
-    // Perbarui stok & MOD di client DB jika ada
+    // Perbarui stok & modal di client DB jika ada
     try {
       const localItem = await db.barang.get(selectedItem.value.id);
       if (localItem) {
         await db.barang.update(localItem.id, {
           stok_akhir: res.data.data.stok_akhir,
-          modal_harga_beli: form.harga_beli,
-          MOD: generatedMod.value
+          modal_harga_beli: form.harga_beli
         });
       }
     } catch (e) {}

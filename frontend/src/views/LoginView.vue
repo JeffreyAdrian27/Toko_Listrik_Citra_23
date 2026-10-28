@@ -88,8 +88,8 @@
     </div>
 
     <!-- Modal Lupa Password Admin via Email (Resend) -->
-    <div v-if="showForgotModal" class="modal-backdrop" @click.self="closeForgotModal">
-      <div class="modal-card">
+    <div v-if="showForgotModal" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="handleBackdropClick($event, closeForgotModal)">
+      <div class="modal-card" @mousedown.stop @click.stop>
         <div class="modal-header">
           <div style="display: flex; align-items: center; gap: 8px;">
             <Mail :size="20" style="color: #005CE6;" />
@@ -156,6 +156,7 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import api from '../api';
+import { onBackdropMouseDown, handleBackdropClick } from '../utils/modalHelper';
 import {
   Zap,
   User,

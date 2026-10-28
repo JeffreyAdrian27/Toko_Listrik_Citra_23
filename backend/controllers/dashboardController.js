@@ -59,7 +59,7 @@ const getDashboardStats = async (req, res) => {
       LIMIT 5
     `);
 
-    // 6. 6 Transaksi Terakhir
+    // 6. 5 Transaksi Penjualan Terakhir
     const [recentSales] = await pool.execute(`
       SELECT 
         p.id, p.kode_barang, p.nama_barang, p.jumlah, p.omzet_penjualan,
@@ -67,7 +67,7 @@ const getDashboardStats = async (req, res) => {
       FROM penjualan p
       LEFT JOIN users u ON p.created_by = u.id
       ORDER BY p.id DESC
-      LIMIT 6
+      LIMIT 5
     `);
 
     return res.json({

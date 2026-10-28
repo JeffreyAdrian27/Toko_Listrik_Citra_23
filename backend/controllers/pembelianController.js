@@ -1,13 +1,11 @@
 const pool = require('../config/db');
 const { logActivity } = require('./activityController');
-const { hargaToMod, modToHarga } = require('../utils/modHelper');
 
 // Admin: Input Pembelian
 const createPembelian = async (req, res) => {
   const {
     barang_id,
     harga_beli = 0,
-    harga_baru_modal_satuan = '',
     jumlah_masuk,
     tanggal
   } = req.body;
@@ -24,23 +22,13 @@ const createPembelian = async (req, res) => {
   }
 
   const hargaNum = parseFloat(harga_beli || 0);
-  let costCode = String(harga_baru_modal_satuan || '').trim().toUpperCase();
-
-  // Jika nominal harga_beli dikirim, otomatis generate kode MOD dari rumus
-  if (hargaNum > 0) {
-    costCode = hargaToMod(hargaNum);
-  }
-
-  if (!costCode) {
-    return res.status(400).json({ error: 'Harga beli / Modal satuan wajib diisi.' });
-  }
 
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
 
     const [rows] = await connection.execute(
-      'SELECT id, kode_barang, nama_barang, `MOD`, total_masuk, stok_akhir, deleted_at FROM barang WHERE id = ? FOR UPDATE',
+      'SELECT id, kode_barang, nama_barang, modal_harga_beli, total_masuk, stok_akhir, deleted_at FROM barang WHERE id = ? FOR UPDATE',
       [barang_id]
     );
 
@@ -51,9 +39,17 @@ const createPembelian = async (req, res) => {
 
     const item = rows[0];
 
-    // Tentukan unit cost modal riil
-    let unitCost = hargaNum > 0 ? hargaNum : modToHarga(costCode);
+    // Tentukan harga beli modal satuan riil
+    const existingModal = parseFloat(item.modal_harga_beli || 0);
+    const unitCost = hargaNum > 0 ? hargaNum : existingModal;
     const totalPembayaran = unitCost * qty;
+    const hargaLamaText = existingModal > 0 ? String(existingModal) : '-';
+    let hargaBaruText = '-';
+    if (existingModal <= 0 && unitCost > 0) {
+      hargaBaruText = String(unitCost);
+    } else if (unitCost > 0 && Math.abs(unitCost - existingModal) > 0.01) {
+      hargaBaruText = String(unitCost);
+    }
 
     // 1. Insert into pembelian
     const [result] = await connection.execute(`
@@ -66,30 +62,29 @@ const createPembelian = async (req, res) => {
       item.id,
       item.kode_barang,
       item.nama_barang,
-      item.MOD || null,
-      costCode,
+      hargaLamaText,
+      hargaBaruText,
       qty,
       totalPembayaran,
       purchaseDate,
       req.user.id
     ]);
 
-    // 2. Update barang: update MOD code, modal_harga_beli, total_masuk, stok_akhir
+    // 2. Update barang: kosongkan MOD, simpan modal_harga_beli, perbarui total_masuk & stok_akhir
     await connection.execute(`
       UPDATE barang
       SET 
-        \`MOD\` = ?,
         modal_harga_beli = ?,
         total_masuk = total_masuk + ?,
         stok_akhir = stok_akhir + ?
       WHERE id = ?
-    `, [costCode, unitCost, qty, qty, item.id]);
+    `, [unitCost, qty, qty, item.id]);
 
     // 3. Log Activity for Bell Notification
     await logActivity({
       tipe: 'pembelian',
       judul: 'Pembelian / Pasokan Barang Baru',
-      detail: `Masuk ${qty} unit [${item.kode_barang}] ${item.nama_barang}. Harga Baru Modal Satuan: ${costCode} (Harga Lama: ${item.MOD || '-'}).`
+      detail: `Masuk ${qty} unit [${item.kode_barang}] ${item.nama_barang}. Harga Beli Satuan: Rp ${unitCost.toLocaleString('id-ID')}.`
     });
 
     await connection.commit();
@@ -100,8 +95,9 @@ const createPembelian = async (req, res) => {
         id: result.insertId,
         kode_barang: item.kode_barang,
         nama_barang: item.nama_barang,
-        harga_lama: item.MOD,
-        harga_baru: costCode,
+        harga_lama: hargaLamaText,
+        harga_baru: hargaBaruText,
+        harga_beli: unitCost,
         jumlah_masuk: qty,
         tanggal: purchaseDate,
         stok_akhir: item.stok_akhir + qty
@@ -187,7 +183,7 @@ const updatePembelian = async (req, res) => {
     let barangInfo = null;
     if (pb.barang_id) {
       const [bRows] = await connection.execute(
-        'SELECT id, kode_barang, nama_barang, `MOD`, modal_harga_beli, stok_akhir, total_masuk FROM barang WHERE id = ? FOR UPDATE',
+        'SELECT id, kode_barang, nama_barang, modal_harga_beli, stok_akhir, total_masuk FROM barang WHERE id = ? FOR UPDATE',
         [pb.barang_id]
       );
       if (bRows.length > 0) barangInfo = bRows[0];
@@ -203,25 +199,45 @@ const updatePembelian = async (req, res) => {
       }
     }
 
-    // Tentukan modal dan MOD
+    // Tentukan modal riil
     let unitCost = parseFloat(barangInfo?.modal_harga_beli || 0);
-    let modCode = pb.harga_baru_modal_satuan;
 
     if (harga_beli !== undefined && harga_beli !== null && !isNaN(harga_beli) && Number(harga_beli) > 0) {
       unitCost = parseFloat(harga_beli);
-      modCode = hargaToMod(unitCost);
     } else if (pb.harga_baru_modal_satuan && pb.harga_baru_modal_satuan !== '-') {
-      unitCost = modToHarga(pb.harga_baru_modal_satuan) || unitCost;
+      const parsed = parseFloat(pb.harga_baru_modal_satuan);
+      if (!isNaN(parsed) && parsed > 0) {
+        unitCost = parsed;
+      }
     }
 
     const totalPembayaran = unitCost * newQty;
     const finalDate = tanggal || pb.tanggal;
+    const costText = unitCost > 0 ? String(unitCost) : '-';
+
+    const existingDateStr = pb.tanggal ? new Date(pb.tanggal).toISOString().split('T')[0] : '';
+    const newDateStr = tanggal ? String(tanggal).split('T')[0] : existingDateStr;
+    const isSameQty = parseInt(oldQty, 10) === parseInt(newQty, 10);
+    const isSameDate = existingDateStr === newDateStr;
+    const isSameCost = parseFloat(pb.total_pembayaran || 0) === parseFloat(totalPembayaran || 0);
+
+    if (isSameQty && isSameDate && isSameCost) {
+      await connection.rollback();
+      return res.json({
+        message: 'Tidak ada perubahan pada data transaksi pembelian.',
+        data: {
+          id: pb.id,
+          jumlah_masuk: pb.jumlah_masuk,
+          total_pembayaran: pb.total_pembayaran
+        }
+      });
+    }
 
     await connection.execute(`
       UPDATE pembelian
       SET jumlah_masuk = ?, total_pembayaran = ?, tanggal = ?, harga_baru_modal_satuan = ?
       WHERE id = ?
-    `, [newQty, totalPembayaran, finalDate, modCode, id]);
+    `, [newQty, totalPembayaran, finalDate, costText, id]);
 
     if (barangInfo) {
       const newStock = (parseInt(barangInfo.stok_akhir, 10) || 0) + diffQty;
@@ -229,9 +245,9 @@ const updatePembelian = async (req, res) => {
 
       await connection.execute(`
         UPDATE barang
-        SET stok_akhir = ?, total_masuk = ?, \`MOD\` = ?, modal_harga_beli = ?
+        SET stok_akhir = ?, total_masuk = ?, modal_harga_beli = ?
         WHERE id = ?
-      `, [newStock, newTotalMasuk, modCode, unitCost, barangInfo.id]);
+      `, [newStock, newTotalMasuk, unitCost, barangInfo.id]);
     }
 
     await connection.commit();
@@ -284,7 +300,7 @@ const deletePembelian = async (req, res) => {
     let barangInfo = null;
     if (pb.barang_id) {
       const [barangRows] = await connection.execute(
-        'SELECT id, kode_barang, nama_barang, `MOD`, modal_harga_beli, stok_akhir, total_masuk FROM barang WHERE id = ? FOR UPDATE',
+        'SELECT id, kode_barang, nama_barang, modal_harga_beli, stok_akhir, total_masuk FROM barang WHERE id = ? FOR UPDATE',
         [pb.barang_id]
       );
       if (barangRows.length > 0) {

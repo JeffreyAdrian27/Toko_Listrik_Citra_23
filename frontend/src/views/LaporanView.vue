@@ -8,7 +8,7 @@
           <div>
             <h3 class="card-title">Laporan Laba Rugi &amp; Keuangan Toko Citra 23</h3>
             <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">
-              Perhitungan Omzet, HPP berdasarkan Master MOD, dan estimasi keuntungan bersih toko.
+              Perhitungan Omzet, HPP Modal, dan estimasi keuntungan bersih toko.
             </p>
           </div>
         </div>
@@ -108,12 +108,12 @@
     <LoadingSpinner
       v-if="loading"
       text="Memuat laporan laba rugi & keuangan..."
-      subtext="Mengkalkulasi omzet, HPP MOD, dan margin laba..."
+      subtext="Mengkalkulasi omzet, HPP, dan margin laba..."
       minHeight="320px"
     />
 
     <template v-else>
-      <!-- Ringkasan Cards Finansial (Laba Rugi Otomatis dari MOD) -->
+      <!-- Ringkasan Cards Finansial (Laba Rugi Otomatis) -->
       <div class="stats-grid">
         <!-- 1. Omzet Penjualan -->
         <div class="stat-card">
@@ -129,10 +129,10 @@
         </div>
       </div>
 
-      <!-- 2. Total Modal HPP (Dari Master MOD) -->
+      <!-- 2. Total Modal HPP -->
       <div class="stat-card">
         <div class="stat-content">
-          <div class="stat-label">Total Modal (HPP MOD)</div>
+          <div class="stat-label">Total Modal (HPP)</div>
           <div class="stat-value amount" style="color: #64748B;">
             Rp {{ formatNumber(reportData.ringkasan?.total_modal_hpp) }}
           </div>
@@ -183,10 +183,10 @@
       </div>
     </div>
 
-    <!-- Rincian Penjualan per Barang & Kode MOD -->
+    <!-- Rincian Penjualan per Barang -->
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title">Rincian Penjualan, Nilai MOD &amp; Keuntungan per Barang</h3>
+        <h3 class="card-title">Rincian Penjualan &amp; Keuntungan per Barang</h3>
         <span style="font-size: 0.85rem; color: var(--text-muted);">
           Periode: <strong>{{ activePeriodLabel }}</strong>
         </span>
@@ -200,7 +200,6 @@
               <th style="width: 110px;">Tanggal</th>
               <th>Kode Barang</th>
               <th>Nama Produk</th>
-              <th style="text-align: center; width: 100px;">MOD</th>
               <th style="text-align: right; width: 130px;">Modal/Unit</th>
               <th style="text-align: center; width: 100px;">Terjual</th>
               <th style="text-align: right; width: 140px;">Total Omzet</th>
@@ -216,11 +215,6 @@
               </td>
               <td><span class="badge badge-blue">{{ item.kode_barang }}</span></td>
               <td style="font-weight: 600;">{{ item.nama_barang }}</td>
-              <td style="text-align: center;">
-                <span class="badge" style="background: #EBF3FF; color: #005CE6; font-family: monospace; font-weight: 800; font-size: 0.85rem;">
-                  {{ item.MOD_kode || '-' }}
-                </span>
-              </td>
               <td class="num" style="text-align: right; color: #64748B;">
                 Rp {{ formatNumber(item.harga_beli_modal) }}
               </td>
@@ -240,7 +234,7 @@
               </td>
             </tr>
             <tr v-if="!reportData.rincian_barang || reportData.rincian_barang.length === 0">
-              <td colspan="10" style="text-align: center; padding: 32px; color: var(--text-muted);">
+              <td colspan="9" style="text-align: center; padding: 32px; color: var(--text-muted);">
                 Tidak ada data transaksi pada periode ini.
               </td>
             </tr>
@@ -476,7 +470,7 @@ const exportToPDF = () => {
   const ringkasan = reportData.value.ringkasan || {};
   const summaryRows = [
     ['Total Penjualan (Omzet)', `Rp ${formatNumber(ringkasan.total_omzet)}`],
-    ['Total Modal HPP (Berdasarkan MOD)', `Rp ${formatNumber(ringkasan.total_modal_hpp)}`],
+    ['Total Modal HPP', `Rp ${formatNumber(ringkasan.total_modal_hpp)}`],
     ['Estimasi Laba Kotor', `Rp ${formatNumber(ringkasan.total_laba_kotor)} (Margin ${ringkasan.margin_laba_persen || 0}%)`],
     ['Total Barang Terjual', `${ringkasan.total_qty_terjual || 0} unit`],
     ['Total Pasokan Masuk', `${ringkasan.total_pembelian_unit || 0} unit`]
@@ -496,7 +490,6 @@ const exportToPDF = () => {
     formatDate(it.tanggal),
     it.kode_barang,
     it.nama_barang,
-    it.MOD_kode || '-',
     `Rp ${formatNumber(it.harga_beli_modal)}`,
     `${it.total_terjual}`,
     `Rp ${formatNumber(it.total_omzet)}`,
@@ -506,7 +499,7 @@ const exportToPDF = () => {
 
   autoTable(doc, {
     startY: doc.lastAutoTable.finalY + 8,
-    head: [['No', 'Tanggal', 'Kode', 'Nama Barang', 'MOD', 'Modal/Unit', 'Qty', 'Omzet', 'HPP', 'Laba Kotor']],
+    head: [['No', 'Tanggal', 'Kode', 'Nama Barang', 'Modal/Unit', 'Qty', 'Omzet', 'HPP', 'Laba Kotor']],
     body: tableData,
     headStyles: { fillColor: [0, 92, 230], textColor: [255, 255, 255], fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [248, 250, 252] },
@@ -549,7 +542,6 @@ const exportToExcel = async () => {
     { key: 'tanggal', width: 16 },
     { key: 'kode_barang', width: 20 },
     { key: 'nama_barang', width: 55 },
-    { key: 'kode_mod', width: 16 },
     { key: 'modal_satuan', width: 22 },
     { key: 'qty', width: 16 },
     { key: 'omzet', width: 24 },
@@ -566,7 +558,7 @@ const exportToExcel = async () => {
   };
 
   // 1. Baris Judul Utama (Kop Laporan Berwarna Biru Citra 23)
-  sheet.mergeCells('A1:J1');
+  sheet.mergeCells('A1:I1');
   const titleCell = sheet.getCell('A1');
   titleCell.value = 'TOKO LISTRIK CITRA 23 PALU';
   titleCell.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -574,7 +566,7 @@ const exportToExcel = async () => {
   titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
   sheet.getRow(1).height = 36;
 
-  sheet.mergeCells('A2:J2');
+  sheet.mergeCells('A2:I2');
   const subCell = sheet.getCell('A2');
   subCell.value = 'LAPORAN LABA RUGI & KEUANGAN';
   subCell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FF005CE6' } };
@@ -582,7 +574,7 @@ const exportToExcel = async () => {
   subCell.alignment = { vertical: 'middle', horizontal: 'center' };
   sheet.getRow(2).height = 24;
 
-  sheet.mergeCells('A3:J3');
+  sheet.mergeCells('A3:I3');
   const periodCell = sheet.getCell('A3');
   periodCell.value = `Periode: ${activePeriodLabel.value} | Dicetak pada: ${new Date().toLocaleString('id-ID')}`;
   periodCell.font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF475569' } };
@@ -603,7 +595,7 @@ const exportToExcel = async () => {
 
   const summaryData = [
     ['Total Penjualan (Omzet)', Number(ringkasan.total_omzet || 0), 'currency'],
-    ['Total Modal HPP (Berdasarkan MOD)', Number(ringkasan.total_modal_hpp || 0), 'currency'],
+    ['Total Modal HPP', Number(ringkasan.total_modal_hpp || 0), 'currency'],
     ['Estimasi Laba Kotor', Number(ringkasan.total_laba_kotor || 0), 'currency_profit'],
     ['Margin Laba Kotor', `${ringkasan.margin_laba_persen || 0}%`, 'text'],
     ['Total Barang Terjual', `${ringkasan.total_qty_terjual || 0} unit`, 'text'],
@@ -644,9 +636,9 @@ const exportToExcel = async () => {
   sheet.addRow([]); // Baris 12 kosong
 
   // 3. Header Tabel Rincian Transaksi
-  sheet.mergeCells('A13:J13');
+  sheet.mergeCells('A13:I13');
   const tblTitle = sheet.getCell('A13');
-  tblTitle.value = 'RINCIAN PENJUALAN, NILAI MOD & KEUNTUNGAN PER BARANG';
+  tblTitle.value = 'RINCIAN PENJUALAN & KEUNTUNGAN PER BARANG';
   tblTitle.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
   tblTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
   tblTitle.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
@@ -658,7 +650,6 @@ const exportToExcel = async () => {
     'Tanggal',
     'Kode Barang',
     'Nama Produk',
-    'Kode MOD',
     'Modal Satuan (Rp)',
     'Qty Terjual',
     'Total Omzet (Rp)',
@@ -672,7 +663,7 @@ const exportToExcel = async () => {
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF005CE6' } };
     cell.alignment = {
       vertical: 'middle',
-      horizontal: colNum === 4 ? 'left' : (colNum >= 6 ? 'right' : 'center'),
+      horizontal: colNum === 4 ? 'left' : (colNum >= 5 ? 'right' : 'center'),
       wrapText: true
     };
     cell.border = {
@@ -705,7 +696,6 @@ const exportToExcel = async () => {
       formatDate(it.tanggal),
       it.kode_barang || '',
       it.nama_barang || '',
-      it.MOD_kode || '-',
       Number(it.harga_beli_modal || 0),
       qty,
       omzet,
@@ -734,26 +724,22 @@ const exportToExcel = async () => {
       } else if (colNum === 4) { // Nama Produk
         cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
         cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
-      } else if (colNum === 5) { // Kode MOD
-        cell.alignment = { vertical: 'middle', horizontal: 'center' };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEBF3FF' } };
-        cell.font = { name: 'Courier New', size: 10, bold: true, color: { argb: 'FF005CE6' } };
-      } else if (colNum === 6) { // Modal Satuan
+      } else if (colNum === 5) { // Modal Satuan
         cell.numFmt = '"Rp "#,##0';
         cell.alignment = { vertical: 'middle', horizontal: 'right' };
         cell.font = { name: 'Arial', size: 9.5, color: { argb: 'FF64748B' } };
-      } else if (colNum === 7) { // Qty
+      } else if (colNum === 6) { // Qty
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
         cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
-      } else if (colNum === 8) { // Omzet
+      } else if (colNum === 7) { // Omzet
         cell.numFmt = '"Rp "#,##0';
         cell.alignment = { vertical: 'middle', horizontal: 'right' };
         cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF005CE6' } };
-      } else if (colNum === 9) { // Modal HPP
+      } else if (colNum === 8) { // Modal HPP
         cell.numFmt = '"Rp "#,##0';
         cell.alignment = { vertical: 'middle', horizontal: 'right' };
         cell.font = { name: 'Arial', size: 9.5, color: { argb: 'FF64748B' } };
-      } else if (colNum === 10) { // Laba Kotor
+      } else if (colNum === 9) { // Laba Kotor
         cell.numFmt = '"Rp "#,##0';
         cell.alignment = { vertical: 'middle', horizontal: 'right' };
         const isProfit = laba >= 0;
@@ -770,7 +756,6 @@ const exportToExcel = async () => {
     '',
     '',
     '',
-    '',
     totalQty,
     totalOmzet,
     totalModal,
@@ -779,7 +764,7 @@ const exportToExcel = async () => {
   const totalRowNum = totalRow.number;
   totalRow.height = 28;
 
-  sheet.mergeCells(`A${totalRowNum}:F${totalRowNum}`);
+  sheet.mergeCells(`A${totalRowNum}:E${totalRowNum}`);
   const totalLabelCell = sheet.getCell(`A${totalRowNum}`);
   totalLabelCell.value = 'TOTAL KESELURUHAN';
   totalLabelCell.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -794,14 +779,14 @@ const exportToExcel = async () => {
       right: { style: 'thin', color: { argb: 'FF334155' } }
     };
 
-    if (colNum === 7) { // Qty
+    if (colNum === 6) { // Qty
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
-    } else if (colNum >= 8) { // Omzet, Modal, Laba
+    } else if (colNum >= 7) { // Omzet, Modal, Laba
       cell.numFmt = '"Rp "#,##0';
       cell.alignment = { vertical: 'middle', horizontal: 'right' };
-      if (colNum === 8) {
+      if (colNum === 7) {
         cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF60A5FA' } }; // Light blue
-      } else if (colNum === 10) {
+      } else if (colNum === 9) {
         cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: totalLaba >= 0 ? 'FF34D399' : 'FFF87171' } }; // Light green/red
       }
     }

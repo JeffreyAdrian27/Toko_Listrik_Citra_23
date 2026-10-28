@@ -1,16 +1,37 @@
 const pool = require('../config/db');
 const { logActivity } = require('./activityController');
-const { hargaToMod, modToHarga } = require('../utils/modHelper');
 const xlsx = require('xlsx');
 const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
 
+// Natural sort collator (mengurutkan nama barang dan angka majemuk seperti 'easy9 2A', 'easy9 20A' secara alami)
+const naturalCollator = new Intl.Collator('id', { numeric: true, sensitivity: 'base' });
+
+// Helper to sanitize barcode value (prevent literal 'null', 'undefined', or '-' from being stored)
+function sanitizeBarcode(val) {
+  if (val === undefined) return undefined;
+  if (val === null) return null;
+  const str = String(val).trim();
+  if (!str || str === '-' || str.toLowerCase() === 'null' || str.toLowerCase() === 'undefined') {
+    return null;
+  }
+  return str;
+}
+
+// Helper to detect if a brand is generic / no-name
+function isNoNameBrand(rawMerk) {
+  if (!rawMerk || !rawMerk.trim()) return true;
+  const cleaned = rawMerk.trim().replace(/[^a-zA-Z]/g, '').toUpperCase();
+  if (cleaned.length === 0) return true;
+  const noNameAliases = ['NONAME', 'NONNAME', 'NON', 'NN', 'NOBRAND', 'NONMERK', 'TANPAMERK', 'TANPABRAND', 'NOMERK'];
+  return noNameAliases.includes(cleaned) || cleaned.startsWith('NONAME');
+}
+
 // Helper to generate prefix candidates based on brand name
 function generatePrefixCandidates(rawMerk) {
-  if (!rawMerk || !rawMerk.trim()) return ['NN'];
+  if (isNoNameBrand(rawMerk)) return ['NN'];
   const cleaned = rawMerk.trim().replace(/[^a-zA-Z]/g, '').toUpperCase();
-  if (cleaned.length === 0) return ['NN'];
   if (cleaned.length <= 3) return [cleaned.padEnd(3, 'X')];
 
   const candidates = [];
@@ -56,40 +77,45 @@ function generatePrefixCandidates(rawMerk) {
   return candidates;
 }
 
-// Helper to generate kode_barang with dynamic collision resolution
-async function generateKodeBarang(connection, merk) {
-  const candidates = generatePrefixCandidates(merk);
-  const targetMerkNormalized = (merk || '').trim().toLowerCase();
+// Helper to generate kode_barang with dynamic collision resolution and user sub-code
+async function generateKodeBarang(connection, merk, subKode = '') {
+  const cleanSubKode = (subKode !== undefined && subKode !== null)
+    ? String(subKode).trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+    : '';
 
-  let chosenPrefix = candidates[0];
+  let brandPrefix = 'NN';
 
-  for (const cand of candidates) {
-    const fullPrefix = `C23${cand}`;
+  if (!isNoNameBrand(merk)) {
+    const candidates = generatePrefixCandidates(merk);
+    const targetMerkNormalized = (merk || '').trim().toLowerCase();
+    brandPrefix = candidates[0];
 
-    // Cek apakah prefix ini sudah pernah dipakai di tabel barang
-    const [existing] = await connection.execute(
-      'SELECT DISTINCT LOWER(TRIM(merk)) AS merk FROM barang WHERE kode_barang LIKE ? AND deleted_at IS NULL',
-      [`${fullPrefix}%`]
-    );
+    for (const cand of candidates) {
+      const testPrefix = `C23${cand}`;
 
-    if (existing.length === 0) {
-      // Belum ada yang pakai -> bebas digunakan
-      chosenPrefix = cand;
-      break;
+      // Cek apakah prefix ini sudah pernah dipakai di tabel barang oleh merk lain
+      const [existing] = await connection.execute(
+        'SELECT DISTINCT LOWER(TRIM(merk)) AS merk FROM barang WHERE kode_barang LIKE ? AND deleted_at IS NULL',
+        [`${testPrefix}%`]
+      );
+
+      if (existing.length === 0) {
+        brandPrefix = cand;
+        break;
+      }
+
+      const isSameMerk = existing.some(row => row.merk === targetMerkNormalized);
+      if (isSameMerk) {
+        brandPrefix = cand;
+        break;
+      }
     }
-
-    // Jika sudah ada yang pakai, cek apakah merk-nya sama
-    const isSameMerk = existing.some(row => row.merk === targetMerkNormalized);
-    if (isSameMerk) {
-      // Prefix ini sah milik merk ini -> lanjutkan
-      chosenPrefix = cand;
-      break;
-    }
-
-    // Jika dipakai oleh merk yang berbeda -> terjadi konflik, coba kandidat berikutnya
   }
 
-  const fullPrefix = `C23${chosenPrefix}`;
+  // Format prefix: C23 + Brand (3 huruf / NN) + Inputan Sub-Kode User
+  // Contoh: C23 + PHI + 18 => C23PHI18
+  // Contoh: C23 + NN + 18 => C23NN18
+  const fullPrefix = `C23${brandPrefix}${cleanSubKode}`;
 
   const [rows] = await connection.execute(
     'SELECT kode_barang FROM barang WHERE kode_barang LIKE ? ORDER BY LENGTH(kode_barang) DESC, kode_barang DESC LIMIT 1 FOR UPDATE',
@@ -106,7 +132,13 @@ async function generateKodeBarang(connection, merk) {
     }
   }
 
-  const paddedSeq = nextSeq > 99999 ? String(nextSeq) : String(nextSeq).padStart(5, '0');
+  // Jika ada input sub-kode: pakai urutan 3 digit (001, 002, 003...)
+  // Jika tanpa sub-kode: fallback ke 5 digit (00001, 00002...)
+  const padLength = cleanSubKode ? 3 : 5;
+  const paddedSeq = nextSeq > (padLength === 3 ? 999 : 99999)
+    ? String(nextSeq)
+    : String(nextSeq).padStart(padLength, '0');
+
   return `${fullPrefix}${paddedSeq}`;
 }
 
@@ -143,35 +175,30 @@ const getAllBarang = async (req, res) => {
       whereClause += ' AND b.stok_akhir <= 5';
     }
 
-    const [countResult] = await pool.execute(
-      `SELECT COUNT(*) as total FROM barang b LEFT JOIN kategori k ON b.kategori_id = k.id ${whereClause}`,
-      params
-    );
-    const total = countResult[0].total;
-
     const query = `
       SELECT 
         b.id, b.kode_barang, b.barcode, b.nama_barang, b.kategori_id, k.nama_kategori,
         b.merk, b.stok_awal, b.total_masuk, b.total_keluar, b.stok_akhir,
-        b.\`MOD\`, 
         b.modal_harga_beli,
         b.harga_jual, b.keterangan, b.created_at
       FROM barang b
       LEFT JOIN kategori k ON b.kategori_id = k.id
       ${whereClause}
-      ORDER BY b.nama_barang ASC
-      LIMIT ? OFFSET ?
     `;
 
-    const [rows] = await pool.query(query, [...params, limit, offset]);
+    const [allRows] = await pool.query(query, params);
+    allRows.sort((a, b) => naturalCollator.compare(a.nama_barang || '', b.nama_barang || ''));
+
+    const total = allRows.length;
+    const paginatedRows = allRows.slice(offset, offset + limit);
 
     return res.json({
-      data: rows,
+      data: paginatedRows,
       pagination: {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limit) || 1
       }
     });
   } catch (err) {
@@ -188,7 +215,6 @@ const getBarangById = async (req, res) => {
       SELECT 
         b.id, b.kode_barang, b.barcode, b.nama_barang, b.kategori_id, k.nama_kategori,
         b.merk, b.stok_awal, b.total_masuk, b.total_keluar, b.stok_akhir,
-        b.\`MOD\`, 
         b.modal_harga_beli,
         b.harga_jual, b.keterangan, b.created_at
       FROM barang b
@@ -230,11 +256,11 @@ const lookupBarang = async (req, res) => {
       FROM barang b
       LEFT JOIN kategori k ON b.kategori_id = k.id
       ${whereClause}
-      ORDER BY b.nama_barang ASC
-      LIMIT 50
+      LIMIT 100
     `, params);
 
-    return res.json({ data: rows });
+    rows.sort((a, b) => naturalCollator.compare(a.nama_barang || '', b.nama_barang || ''));
+    return res.json({ data: rows.slice(0, 50) });
   } catch (err) {
     console.error('lookupBarang error:', err);
     return res.status(500).json({ error: 'Gagal mencari barang.' });
@@ -251,7 +277,7 @@ const checkBarcode = async (req, res) => {
 
     const isAdmin = req.user && req.user.role === 'admin';
     const selectFields = isAdmin
-      ? 'b.id, b.kode_barang, b.barcode, b.nama_barang, b.kategori_id, k.nama_kategori, b.merk, b.stok_akhir, b.harga_jual, b.`MOD`, b.modal_harga_beli, b.keterangan'
+      ? 'b.id, b.kode_barang, b.barcode, b.nama_barang, b.kategori_id, k.nama_kategori, b.merk, b.stok_akhir, b.harga_jual, b.modal_harga_beli, b.keterangan'
       : 'b.id, b.kode_barang, b.barcode, b.nama_barang, b.kategori_id, k.nama_kategori, b.merk, b.stok_akhir, b.harga_jual';
 
     const [rows] = await pool.execute(
@@ -328,8 +354,8 @@ const createBarang = async (req, res) => {
     barcode,
     kategori_id,
     merk,
+    sub_kode,
     stok_awal = 0,
-    MOD = '',
     harga_jual = 0,
     harga_beli = 0,
     keterangan
@@ -341,17 +367,14 @@ const createBarang = async (req, res) => {
   if (!kategori_id) {
     return res.status(400).json({ error: 'Kategori wajib dipilih.' });
   }
+  if (!sub_kode || !String(sub_kode).trim()) {
+    return res.status(400).json({ error: 'Kode barang (sub-kode) wajib diisi (contoh: 18, 15).' });
+  }
 
-  const rawBarcode = barcode ? String(barcode).trim() : null;
+  const rawBarcode = sanitizeBarcode(barcode) || null;
   const initialStock = parseInt(stok_awal || 0, 10);
   const sellPrice = parseFloat(harga_jual || 0);
-  const hargaBeliNum = parseFloat(harga_beli || 0);
-  let modCode = String(MOD || '').trim().toUpperCase();
-
-  // Jika harga_beli dikirim, otomatis generate MOD
-  if (hargaBeliNum > 0) {
-    modCode = hargaToMod(hargaBeliNum);
-  }
+  const unitCost = parseFloat(harga_beli || 0);
 
   const connection = await pool.getConnection();
   try {
@@ -371,17 +394,27 @@ const createBarang = async (req, res) => {
       }
     }
 
-    const kode_barang = await generateKodeBarang(connection, merk);
-    const stok_akhir = initialStock;
+    // Cek duplikasi nama barang
+    const [nameDup] = await connection.execute(
+      'SELECT id, nama_barang, kode_barang FROM barang WHERE LOWER(TRIM(nama_barang)) = ? AND deleted_at IS NULL LIMIT 1',
+      [nama_barang.trim().toLowerCase()]
+    );
+    if (nameDup.length > 0) {
+      await connection.rollback();
+      return res.status(400).json({
+        error: `Barang dengan nama "${nama_barang.trim()}" sudah ada di database [${nameDup[0].kode_barang}]. Untuk menambah stok, gunakan tombol "+ Stok" pada baris barang tersebut atau melalui menu Pembelian.`
+      });
+    }
 
-    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modCode);
+    const kode_barang = await generateKodeBarang(connection, merk, sub_kode);
+    const stok_akhir = initialStock;
 
     const [result] = await connection.execute(`
       INSERT INTO barang (
         kode_barang, barcode, nama_barang, kategori_id, merk,
         stok_awal, total_masuk, total_keluar, stok_akhir,
-        \`MOD\`, harga_jual, modal_harga_beli, keterangan
-      ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?)
+        harga_jual, modal_harga_beli, keterangan
+      ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)
     `, [
       kode_barang,
       rawBarcode,
@@ -390,7 +423,6 @@ const createBarang = async (req, res) => {
       merk ? merk.trim() : '',
       initialStock,
       stok_akhir,
-      modCode,
       sellPrice,
       unitCost,
       keterangan || null
@@ -400,7 +432,7 @@ const createBarang = async (req, res) => {
     await logActivity({
       tipe: 'barang',
       judul: 'Barang Baru Ditambahkan',
-      detail: `Barang [${kode_barang}] ${nama_barang.trim()} (Merk: ${merk || 'Noname'}, MOD: ${modCode || '-'}, Stok: ${initialStock}) berhasil ditambahkan.`
+      detail: `Barang [${kode_barang}] ${nama_barang.trim()} (Merk: ${merk || 'Noname'}, Harga Beli: Rp ${unitCost.toLocaleString('id-ID')}, Stok: ${initialStock}) berhasil ditambahkan.`
     });
 
     await connection.commit();
@@ -412,7 +444,7 @@ const createBarang = async (req, res) => {
         kode_barang,
         barcode: rawBarcode,
         nama_barang: nama_barang.trim(),
-        MOD: modCode
+        modal_harga_beli: unitCost
       }
     });
   } catch (err) {
@@ -432,7 +464,6 @@ const updateBarang = async (req, res) => {
     barcode,
     kategori_id,
     merk,
-    MOD = '',
     harga_beli = 0,
     harga_jual,
     keterangan
@@ -442,12 +473,8 @@ const updateBarang = async (req, res) => {
     return res.status(400).json({ error: 'Nama barang wajib diisi.' });
   }
 
-  const rawBarcode = barcode !== undefined ? (String(barcode).trim() || null) : undefined;
-  const hargaBeliNum = parseFloat(harga_beli || 0);
-  let modCode = String(MOD || '').trim().toUpperCase();
-  if (hargaBeliNum > 0) {
-    modCode = hargaToMod(hargaBeliNum);
-  }
+  const rawBarcode = sanitizeBarcode(barcode);
+  const unitCost = parseFloat(harga_beli || 0);
 
   try {
     const [existing] = await pool.execute('SELECT * FROM barang WHERE id = ?', [id]);
@@ -469,32 +496,81 @@ const updateBarang = async (req, res) => {
       }
     }
 
-    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modCode);
+    // Cek duplikasi nama barang jika diubah
+    const [nameDup] = await pool.execute(
+      'SELECT id, nama_barang, kode_barang FROM barang WHERE LOWER(TRIM(nama_barang)) = ? AND id != ? AND deleted_at IS NULL LIMIT 1',
+      [nama_barang.trim().toLowerCase(), id]
+    );
+    if (nameDup.length > 0) {
+      return res.status(400).json({
+        error: `Barang dengan nama "${nama_barang.trim()}" sudah digunakan oleh barang [${nameDup[0].kode_barang}].`
+      });
+    }
+
+    // Deteksi apakah ada data yang benar-benar berubah
+    const oldCost = parseFloat(existing[0].modal_harga_beli || 0);
+    const newHargaJual = parseFloat(harga_jual || 0);
+    const oldHargaJual = parseFloat(existing[0].harga_jual || 0);
+    const oldNama = (existing[0].nama_barang || '').trim();
+    const newNama = (nama_barang || '').trim();
+    const oldBarcode = existing[0].barcode ? String(existing[0].barcode).trim() : null;
+    const newBarcode = finalBarcode ? String(finalBarcode).trim() : null;
+    const oldMerk = (existing[0].merk || '').trim();
+    const newMerk = (merk || '').trim();
+    const oldKategoriId = String(existing[0].kategori_id || '');
+    const newKategoriId = String(kategori_id || '');
+    const oldKeterangan = (existing[0].keterangan || '').trim();
+    const newKeterangan = (keterangan || '').trim();
+
+    const changes = [];
+    if (oldNama !== newNama) {
+      changes.push(`Nama: "${oldNama}" → "${newNama}"`);
+    }
+    if (oldBarcode !== newBarcode) {
+      changes.push(`Barcode: "${oldBarcode || '-'}" → "${newBarcode || '-'}"`);
+    }
+    if (oldKategoriId !== newKategoriId) {
+      changes.push(`Kategori diubah`);
+    }
+    if (oldMerk !== newMerk) {
+      changes.push(`Merk: "${oldMerk || '-'}" → "${newMerk || '-'}"`);
+    }
+    if (oldHargaJual !== newHargaJual) {
+      changes.push(`Harga: Rp ${oldHargaJual.toLocaleString('id-ID')} → Rp ${newHargaJual.toLocaleString('id-ID')}`);
+    }
+    if (oldCost !== unitCost) {
+      changes.push(`Harga Beli: Rp ${oldCost.toLocaleString('id-ID')} → Rp ${unitCost.toLocaleString('id-ID')}`);
+    }
+    if (oldKeterangan !== newKeterangan) {
+      changes.push(`Keterangan diubah`);
+    }
+
+    // Jika tidak ada perubahan data sama sekali: jangan berikan log atau notifikasi
+    if (changes.length === 0) {
+      return res.json({ message: 'Tidak ada perubahan pada data barang.' });
+    }
 
     await pool.execute(`
       UPDATE barang
-      SET nama_barang = ?, barcode = ?, kategori_id = ?, merk = ?, \`MOD\` = ?, harga_jual = ?, modal_harga_beli = ?, keterangan = ?
+      SET nama_barang = ?, barcode = ?, kategori_id = ?, merk = ?, harga_jual = ?, modal_harga_beli = ?, keterangan = ?
       WHERE id = ?
     `, [
-      nama_barang.trim(),
-      finalBarcode,
+      newNama,
+      newBarcode,
       kategori_id,
-      merk ? merk.trim() : '',
-      modCode,
-      parseFloat(harga_jual || 0),
+      newMerk,
+      newHargaJual,
       unitCost,
-      keterangan || null,
+      newKeterangan || null,
       id
     ]);
 
     // Sinkronkan perubahan ke tabel pembelian
-    const newHargaBaruMod = modCode || '-';
-    if (existing[0].nama_barang !== nama_barang.trim()) {
-      await pool.execute('UPDATE pembelian SET nama_barang = ? WHERE barang_id = ?', [nama_barang.trim(), id]);
+    if (oldNama !== newNama) {
+      await pool.execute('UPDATE pembelian SET nama_barang = ? WHERE barang_id = ?', [newNama, id]);
     }
 
-    const oldCost = parseFloat(existing[0].modal_harga_beli || 0);
-    if (oldCost !== unitCost || (existing[0].MOD || '') !== modCode) {
+    if (oldCost !== unitCost) {
       const [pembelianRows] = await pool.execute(
         'SELECT id, jumlah_masuk, harga_baru_modal_satuan, total_pembayaran FROM pembelian WHERE barang_id = ? ORDER BY id DESC',
         [id]
@@ -506,7 +582,7 @@ const updateBarang = async (req, res) => {
         const newTotalLast = unitCost * (lastRow.jumlah_masuk || 0);
         await pool.execute(
           'UPDATE pembelian SET harga_baru_modal_satuan = ?, total_pembayaran = ? WHERE id = ?',
-          [newHargaBaruMod, newTotalLast, lastRow.id]
+          [String(unitCost), newTotalLast, lastRow.id]
         );
 
         // 2. Jika ada transaksi pembelian sebelumnya yang harganya masih '-' atau Rp 0, ikut perbarui
@@ -516,34 +592,15 @@ const updateBarang = async (req, res) => {
             const newTotal = unitCost * (row.jumlah_masuk || 0);
             await pool.execute(
               'UPDATE pembelian SET harga_baru_modal_satuan = ?, total_pembayaran = ? WHERE id = ?',
-              [newHargaBaruMod, newTotal, row.id]
+              [String(unitCost), newTotal, row.id]
             );
           }
         }
       }
     }
 
-    // Catat log aktivitas (notifikasi lonceng)
-    const changes = [];
-    if (existing[0].nama_barang !== nama_barang.trim()) {
-      changes.push(`Nama: "${existing[0].nama_barang}" → "${nama_barang.trim()}"`);
-    }
-    if ((existing[0].merk || '') !== (merk ? merk.trim() : '')) {
-      changes.push(`Merk: "${existing[0].merk || '-'}" → "${merk ? merk.trim() : '-'}"`);
-    }
-    if (parseFloat(existing[0].harga_jual) !== parseFloat(harga_jual || 0)) {
-      changes.push(`Harga: Rp ${parseFloat(existing[0].harga_jual || 0).toLocaleString('id-ID')} → Rp ${parseFloat(harga_jual || 0).toLocaleString('id-ID')}`);
-    }
-    if (oldCost !== unitCost) {
-      changes.push(`Modal Beli: Rp ${oldCost.toLocaleString('id-ID')} → Rp ${unitCost.toLocaleString('id-ID')}`);
-    }
-    if ((existing[0].MOD || '') !== modCode) {
-      changes.push(`MOD: "${existing[0].MOD || '-'}" → "${modCode || '-'}"`);
-    }
-
-    const detailLog = changes.length > 0
-      ? `Barang [${existing[0].kode_barang}] diperbarui (${changes.join(', ')}).`
-      : `Barang [${existing[0].kode_barang}] ${nama_barang.trim()} berhasil diperbarui.`;
+    // Catat log aktivitas (notifikasi lonceng) HANYA jika ada perubahan
+    const detailLog = `Barang [${existing[0].kode_barang}] diperbarui (${changes.join(', ')}).`;
 
     await logActivity({
       tipe: 'barang',
@@ -558,29 +615,21 @@ const updateBarang = async (req, res) => {
   }
 };
 
-// Admin: Modal "Tambah Stok" (Sinkron ke Pembelian & Update MOD)
+// Admin: Modal "Tambah Stok" (Sinkron ke Pembelian & Update Harga Beli)
 const tambahStokBarang = async (req, res) => {
   const { id } = req.params;
   const {
     harga_beli = 0,
-    harga_baru_modal_satuan = '',
     jumlah_masuk,
     tanggal
   } = req.body;
 
   const jumlah = parseInt(jumlah_masuk, 10);
   const hargaBeliNum = parseFloat(harga_beli || 0);
-  let modBaru = String(harga_baru_modal_satuan || '').trim().toUpperCase();
-  if (hargaBeliNum > 0) {
-    modBaru = hargaToMod(hargaBeliNum);
-  }
   const tanggalBeli = tanggal || new Date().toISOString().split('T')[0];
 
   if (!jumlah || jumlah <= 0) {
     return res.status(400).json({ error: 'Jumlah masuk harus lebih besar dari 0.' });
-  }
-  if (!modBaru) {
-    return res.status(400).json({ error: 'Harga beli (modal) wajib diisi untuk membuat kode MOD.' });
   }
 
   const connection = await pool.getConnection();
@@ -588,7 +637,7 @@ const tambahStokBarang = async (req, res) => {
     await connection.beginTransaction();
 
     const [rows] = await connection.execute(
-      'SELECT id, kode_barang, nama_barang, `MOD`, total_masuk, stok_akhir FROM barang WHERE id = ? FOR UPDATE',
+      'SELECT id, kode_barang, nama_barang, modal_harga_beli, total_masuk, stok_akhir FROM barang WHERE id = ? FOR UPDATE',
       [id]
     );
 
@@ -598,8 +647,13 @@ const tambahStokBarang = async (req, res) => {
     }
 
     const item = rows[0];
+    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : parseFloat(item.modal_harga_beli || 0);
 
-    const unitCost = hargaBeliNum > 0 ? hargaBeliNum : modToHarga(modBaru);
+    if (unitCost <= 0) {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Harga beli (modal) satuan wajib diisi.' });
+    }
+
     const totalPembayaran = unitCost * jumlah;
 
     // 1. Record in pembelian
@@ -613,30 +667,29 @@ const tambahStokBarang = async (req, res) => {
       item.id,
       item.kode_barang,
       item.nama_barang,
-      item.MOD || null,
-      modBaru,
+      String(item.modal_harga_beli || 0),
+      String(unitCost),
       jumlah,
       totalPembayaran,
       tanggalBeli,
       req.user.id
     ]);
 
-    // 2. Update barang: update MOD code, modal_harga_beli, increase total_masuk & stok_akhir
+    // 2. Update barang: modal_harga_beli, increase total_masuk & stok_akhir
     await connection.execute(`
       UPDATE barang
       SET 
-        \`MOD\` = ?,
         modal_harga_beli = ?,
         total_masuk = total_masuk + ?,
         stok_akhir = stok_akhir + ?
       WHERE id = ?
-    `, [modBaru, unitCost, jumlah, jumlah, item.id]);
+    `, [unitCost, jumlah, jumlah, item.id]);
 
     // 3. Log Activity for Bell Notification
     await logActivity({
       tipe: 'pembelian',
       judul: 'Stok Baru Ditambahkan',
-      detail: `Tambah stok ${jumlah} unit untuk [${item.kode_barang}] ${item.nama_barang}. MOD Baru: ${modBaru} (MOD Lama: ${item.MOD || '-'}).`
+      detail: `Tambah stok ${jumlah} unit untuk [${item.kode_barang}] ${item.nama_barang}. Harga Beli: Rp ${unitCost.toLocaleString('id-ID')}.`
     });
 
     await connection.commit();
@@ -710,23 +763,24 @@ const downloadTemplateExcel = async (req, res) => {
       views: [{ showGridLines: true }]
     });
 
-    // 1. Lebar Kolom (9 kolom: Tanggal, Barcode, Kategori, Nama, Merk, Harga Lama, Harga Baru, Harga Jual, Qty)
+    // 1. Lebar Kolom (10 kolom: Tanggal, Barcode, Kategori, Nama, Merk, Kode Sub, Harga Lama, Harga Baru Modal Satuan, Harga Jual, Jumlah Masuk)
     worksheet.columns = [
       { key: 'tanggal', width: 16 },
       { key: 'barcode', width: 22 },
       { key: 'kategori', width: 25 },
       { key: 'nama', width: 48 },
       { key: 'merk', width: 18 },
+      { key: 'sub_kode', width: 24 },
       { key: 'harga_lama', width: 18 },
       { key: 'harga_baru', width: 28 },
       { key: 'harga_jual', width: 20 },
-      { key: 'jumlah_masuk', width: 16 }
+      { key: 'jumlah_masuk', width: 24 }
     ];
 
-    // 2. Row 1: Banner Judul (Merged A1:I1)
-    worksheet.mergeCells('A1:I1');
+    // 2. Row 1: Banner Judul (Merged A1:J1)
+    worksheet.mergeCells('A1:J1');
     const titleCell = worksheet.getCell('A1');
-    titleCell.value = 'REKAPAN BARANG MASUK -  BULANAN';
+    titleCell.value = 'REKAPAN BARANG MASUK - BULANAN';
     titleCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FF000000' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     worksheet.getRow(1).height = 36;
@@ -738,13 +792,14 @@ const downloadTemplateExcel = async (req, res) => {
     periodeCell.alignment = { horizontal: 'left', vertical: 'middle' };
     worksheet.getRow(2).height = 24;
 
-    // 4. Row 3: Header Kolom (Warna Biru Solid & Teks Putih Bold persis screenshot)
+    // 4. Row 3: Header Kolom Sesuai Format Toko Citra 23
     const headers = [
       'TANGGAL',
       'BARCODE (OPSIONAL)',
       'KATEGORI BARANG',
       'NAMA BARANG',
       'MERK',
+      'KODE (WAJIB BARANG BARU)',
       'HARGA LAMA',
       'HARGA BARU MODAL SATUAN',
       'HARGA JUAL',
@@ -759,13 +814,13 @@ const downloadTemplateExcel = async (req, res) => {
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FF2F6DB5' } // Warna biru solid persis screenshot
+        fgColor: { argb: 'FF2F6DB5' }
       };
       cell.font = {
         name: 'Arial',
         size: 10,
         bold: true,
-        color: { argb: 'FFFFFFFF' } // Teks putih bold
+        color: { argb: 'FFFFFFFF' }
       };
       cell.alignment = {
         horizontal: 'center',
@@ -780,11 +835,11 @@ const downloadTemplateExcel = async (req, res) => {
       };
     });
 
-    // 5. Data Contoh / Template (Barcode opsional, Harga Jual angka rupiah)
+    // 5. Data Contoh / Template (Harga Beli & Harga Jual angka nominal Rupiah)
     const sampleData = [
-      ['2026-10-14', '8991234567890', 'LAMPU VOSCO', 'lampu LED t-bulb vosco 20w neo capsule', 'Vosco', 'LCB', 'LTB', 35000, 10],
-      ['', '', 'PANASONIC', 'stop kontak tempel panasonic', 'Panasonic', 'CDSB', 'CDLB', 28000, 20],
-      ['', '8999876543210', 'FITTING', 'fitting lampu gantung karet waterproof', '', '-', 'XB', 15000, 15]
+      ['25/10/2026', '', 'LAMPU MEGAMAN', 'lampu emergency LED bulb megaman 9w', 'Megaman', '18', 10000, 20000, 35000, 10],
+      ['', '', 'LAMPU MEGAMAN', 'lampu emergency LED bulb megaman 12w', 'Megaman', '18', 10000, '-', 28000, 20],
+      ['', '8999876543210', 'FITTING', 'fitting lampu gantung karet waterproof', '', '15', 10000, 12000, 15000, 15]
     ];
 
     sampleData.forEach((rowValues) => {
@@ -799,19 +854,18 @@ const downloadTemplateExcel = async (req, res) => {
           right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
         };
 
-        if (colNumber === 2) {
-          // Kolom Barcode: Format sebagai Text agar angka barcode panjang tidak terpotong
+        if (colNumber === 2 || colNumber === 6) {
           cell.numFmt = '@';
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
         } else if (colNumber === 4) {
-          // Nama Barang
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
         } else if (colNumber === 3 || colNumber === 5) {
-          // Kategori & Merk
           cell.alignment = { horizontal: 'left', vertical: 'middle' };
-        } else if (colNumber === 8) {
-          // Kolom Harga Jual: Format angka numerik ribuan
-          cell.numFmt = '#,##0';
+        } else if (colNumber === 7 || colNumber === 8 || colNumber === 9) {
+          // Kolom Harga Lama, Harga Baru Modal Satuan, Harga Jual: Format angka numerik ribuan
+          if (typeof cell.value === 'number') {
+            cell.numFmt = '#,##0';
+          }
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
         } else {
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -830,7 +884,7 @@ const downloadTemplateExcel = async (req, res) => {
   }
 };
 
-// Admin: Import Barang Massal dari Excel dengan cek nama barang & update stok/MOD otomatis
+// Admin: Import Barang Massal dari Excel dengan cek nama barang & update stok/modal otomatis
 const importExcelBarang = async (req, res) => {
   if (!req.file || !req.file.buffer) {
     return res.status(400).json({ error: 'File Excel wajib diunggah.' });
@@ -876,11 +930,26 @@ const importExcelBarang = async (req, res) => {
     const colKategori = headerRow.findIndex(h => h.includes('KATEGORI'));
     const colNama = headerRow.findIndex(h => h.includes('NAMA BARANG'));
     const colMerk = headerRow.findIndex(h => h.includes('MERK'));
-    const colKode = headerRow.findIndex(h => h.includes('KODE BARANG'));
-    const colHargaLama = headerRow.findIndex(h => h.includes('HARGA LAMA'));
-    const colHargaBaru = headerRow.findIndex(h => h.includes('HARGA BARU'));
-    const colHargaJual = headerRow.findIndex(h => h.includes('HARGA JUAL') || (h.includes('JUAL') && !h.includes('MODAL')));
-    const colQty = headerRow.findIndex(h => h.includes('JUMLAH MASUK'));
+    const colSubKode = headerRow.findIndex(h => 
+      h === 'KODE' || 
+      h.startsWith('KODE') ||
+      h.includes('KODE (WAJIB') || 
+      h.includes('KODE (OPSIONAL)') || 
+      h.includes('SUB KODE') || 
+      h.includes('SUB-KODE') || 
+      h.includes('KODE TIPE') || 
+      (h.includes('KODE') && !h.includes('BARCODE') && !h.includes('NAMA BARANG'))
+    );
+    const colHargaLama = headerRow.findIndex(h => h.includes('HARGA LAMA') || h.includes('MODAL LAMA'));
+    const colHargaBeli = headerRow.findIndex(h => 
+      (h.includes('HARGA BARU') || h.includes('MODAL SATUAN') || h.includes('HARGA BELI') || h.includes('MODAL')) && 
+      !h.includes('LAMA') && !h.includes('JUAL')
+    );
+    const colHargaJual = headerRow.findIndex(h => h.includes('HARGA JUAL') || (h.includes('JUAL') && !h.includes('BELI') && !h.includes('MODAL')));
+    const colQty = headerRow.findIndex(h => 
+      (h.includes('JUMLAH MASUK') || h.includes('JUMLAH') || h.includes('QTY') || h.includes('STOK') || h.includes('UNIT') || h.includes('MASUK')) && 
+      !h.includes('HARGA') && !h.includes('MODAL')
+    );
 
     const todayStr = new Date().toISOString().split('T')[0];
     let lastSeenDate = todayStr;
@@ -891,7 +960,7 @@ const importExcelBarang = async (req, res) => {
         return !isNaN(val) && val >= 0 ? val : null;
       }
       let str = String(val).trim();
-      if (!str || str === '-' || str.toLowerCase() === 'null') return null;
+      if (!str || str === '-' || str === '–' || str === '—' || str.toLowerCase() === 'null') return null;
       str = str.replace(/[^0-9.,]/g, '');
       if (!str) return null;
 
@@ -915,6 +984,10 @@ const importExcelBarang = async (req, res) => {
       return !isNaN(num) && num >= 0 ? num : null;
     }
 
+    function parseHargaBeli(val) {
+      return parseHargaJual(val);
+    }
+
     function parseExcelDate(val, fallback) {
       if (!val) return fallback;
       if (typeof val === 'number') {
@@ -928,6 +1001,21 @@ const importExcelBarang = async (req, res) => {
       }
       const str = String(val).trim();
       if (!str) return fallback;
+
+      // Handle format DD/MM/YYYY atau DD-MM-YYYY
+      if (str.includes('/') || (str.includes('-') && str.split('-')[0].length <= 2)) {
+        const sep = str.includes('/') ? '/' : '-';
+        const parts = str.split(sep);
+        if (parts.length === 3) {
+          if (parts[0].length <= 2 && parts[2].length === 4) {
+            const day = parts[0].padStart(2, '0');
+            const month = parts[1].padStart(2, '0');
+            const year = parts[2];
+            return `${year}-${month}-${day}`;
+          }
+        }
+      }
+
       if (!isNaN(str) && Number(str) > 30000) {
         return parseExcelDate(Number(str), fallback);
       }
@@ -939,7 +1027,9 @@ const importExcelBarang = async (req, res) => {
     }
 
     let createdCount = 0;
-    let updatedCount = 0;
+    let stokUpdatedCount = 0;
+    let priceUpdatedCount = 0;
+    let unchangedCount = 0;
     let skippedCount = 0;
     const itemResults = [];
 
@@ -996,9 +1086,32 @@ const importExcelBarang = async (req, res) => {
       // 3. Merk
       const rawMerk = colMerk !== -1 && row[colMerk] ? String(row[colMerk]).trim() : '';
 
-      // 4. Sandi MOD & Modal
-      const rawHargaLama = colHargaLama !== -1 && row[colHargaLama] ? String(row[colHargaLama]).trim().toUpperCase() : '';
-      const rawHargaBaru = colHargaBaru !== -1 && row[colHargaBaru] ? String(row[colHargaBaru]).trim().toUpperCase() : '';
+      // 3b. Sub-Kode (Opsional: misal 18, 15, A1)
+      let rawSubKode = '';
+      if (colSubKode !== -1 && row[colSubKode] !== undefined && row[colSubKode] !== null) {
+        const val = String(row[colSubKode]).trim();
+        if (val && !val.toUpperCase().startsWith('C23')) {
+          rawSubKode = val;
+        }
+      }
+
+      // 4. Harga Beli / Modal
+      let inputHargaBeli = null;
+      const rawHargaBaru = colHargaBeli !== -1 ? row[colHargaBeli] : null;
+      const rawHargaLama = colHargaLama !== -1 ? row[colHargaLama] : null;
+
+      // Prioritas 1: Ambil dari kolom HARGA BARU MODAL SATUAN
+      if (rawHargaBaru !== undefined && rawHargaBaru !== null) {
+        inputHargaBeli = parseHargaBeli(rawHargaBaru);
+      }
+
+      // Prioritas 2: Jika HARGA BARU kosong / '-' / null / 0, fallback ke HARGA LAMA
+      if ((inputHargaBeli === null || inputHargaBeli <= 0) && rawHargaLama !== undefined && rawHargaLama !== null) {
+        const fallbackLama = parseHargaBeli(rawHargaLama);
+        if (fallbackLama !== null && fallbackLama > 0) {
+          inputHargaBeli = fallbackLama;
+        }
+      }
 
       // 4b. Harga Jual (Opsional: angka/desimal/ribuan, jika diisi akan memperbarui atau mengatur harga jual)
       let inputHargaJual = null;
@@ -1019,7 +1132,7 @@ const importExcelBarang = async (req, res) => {
       let existing = [];
       if (cleanBarcode) {
         const [byBarcode] = await connection.execute(
-          'SELECT id, kode_barang, barcode, nama_barang, merk, kategori_id, `MOD`, modal_harga_beli, harga_jual, stok_akhir, total_masuk FROM barang WHERE barcode = ? AND deleted_at IS NULL LIMIT 1',
+          'SELECT id, kode_barang, barcode, nama_barang, merk, kategori_id, modal_harga_beli, harga_jual, stok_akhir, total_masuk FROM barang WHERE barcode = ? AND deleted_at IS NULL LIMIT 1',
           [cleanBarcode]
         );
         if (byBarcode.length > 0) {
@@ -1029,42 +1142,70 @@ const importExcelBarang = async (req, res) => {
 
       if (existing.length === 0) {
         const [byName] = await connection.execute(
-          'SELECT id, kode_barang, barcode, nama_barang, merk, kategori_id, `MOD`, modal_harga_beli, harga_jual, stok_akhir, total_masuk FROM barang WHERE LOWER(TRIM(nama_barang)) = LOWER(TRIM(?)) AND deleted_at IS NULL LIMIT 1',
+          'SELECT id, kode_barang, barcode, nama_barang, merk, kategori_id, modal_harga_beli, harga_jual, stok_akhir, total_masuk FROM barang WHERE LOWER(TRIM(nama_barang)) = LOWER(TRIM(?)) AND deleted_at IS NULL LIMIT 1',
           [namaBarang]
         );
         existing = byName;
       }
 
       if (existing.length > 0) {
-        // SUDAH ADA: Update stok, perbarui MOD, harga jual (& barcode jika ada input baru)
+        // SUDAH ADA: Update stok, perbarui harga beli, harga jual (& barcode jika ada input baru)
         const item = existing[0];
-        const oldMod = item.MOD || '';
         const oldModal = parseFloat(item.modal_harga_beli || 0);
+        const oldHargaJual = parseFloat(item.harga_jual || 0);
+        const oldBarcode = item.barcode || null;
 
-        // Prioritas MOD: HARGA BARU > HARGA LAMA > MOD eksisting
-        const hasHargaBaru = rawHargaBaru && rawHargaBaru !== '-';
-        const hasHargaLama = rawHargaLama && rawHargaLama !== '-';
-        const modBaru = hasHargaBaru ? rawHargaBaru : (hasHargaLama ? rawHargaLama : oldMod);
-        const modalBaru = modBaru ? (modToHarga(modBaru) || oldModal) : oldModal;
-        const barcodeToSave = cleanBarcode || item.barcode || null;
+        // Prioritas Harga Beli: Jika diisi di Excel perbarui, jika kosong pertahankan modal lama
+        const modalBaru = inputHargaBeli !== null ? inputHargaBeli : oldModal;
+        const barcodeToSave = cleanBarcode || oldBarcode;
         // Prioritas Harga Jual: Jika diisi di Excel perbarui, jika kosong pertahankan harga jual lama
-        const hargaJualFinal = inputHargaJual !== null ? inputHargaJual : parseFloat(item.harga_jual || 0);
+        const hargaJualFinal = inputHargaJual !== null ? inputHargaJual : oldHargaJual;
+
+        // Periksa apakah ada perubahan nyata
+        const isQtyChanged = qtyMasuk > 0;
+        const isModalChanged = inputHargaBeli !== null && Math.abs(modalBaru - oldModal) > 0.001;
+        const isHargaJualChanged = inputHargaJual !== null && Math.abs(hargaJualFinal - oldHargaJual) > 0.001;
+        const isBarcodeChanged = cleanBarcode !== null && cleanBarcode !== oldBarcode;
+
+        const hasAnyChange = isQtyChanged || isModalChanged || isHargaJualChanged || isBarcodeChanged;
+
+        if (!hasAnyChange) {
+          // Tidak ada perubahan sama sekali (Stok 0, harga sama, barcode sama)
+          unchangedCount++;
+          itemResults.push({
+            status: 'unchanged',
+            kode_barang: item.kode_barang,
+            barcode: oldBarcode,
+            nama_barang: item.nama_barang,
+            merk: item.merk || rawMerk,
+            stok_ditambah: 0,
+            stok_akhir: item.stok_akhir,
+            harga_beli_lama: oldModal,
+            harga_beli_baru: oldModal,
+            harga_jual: oldHargaJual,
+            keterangan: 'Tidak ada perubahan'
+          });
+          continue;
+        }
 
         await connection.execute(`
           UPDATE barang
           SET 
             barcode = ?,
-            \`MOD\` = ?,
             modal_harga_beli = ?,
             harga_jual = ?,
             total_masuk = total_masuk + ?,
             stok_akhir = stok_akhir + ?
           WHERE id = ?
-        `, [barcodeToSave, modBaru, modalBaru, hargaJualFinal, qtyMasuk, qtyMasuk, item.id]);
+        `, [barcodeToSave, modalBaru, hargaJualFinal, qtyMasuk, qtyMasuk, item.id]);
 
-        if (qtyMasuk > 0) {
-          const hargaLamaText = oldMod || (hasHargaLama ? rawHargaLama : '-');
-          const hargaBaruText = hasHargaBaru ? rawHargaBaru : '-';
+        if (isQtyChanged) {
+          stokUpdatedCount++;
+          const rawLamaParsed = (rawHargaLama !== undefined && rawHargaLama !== null) ? parseHargaBeli(rawHargaLama) : null;
+          const hargaLamaText = (rawLamaParsed !== null && rawLamaParsed > 0)
+            ? String(rawLamaParsed)
+            : (oldModal > 0 ? String(oldModal) : '-');
+          const hargaBaruText = modalBaru > 0 ? String(modalBaru) : '-';
 
           await connection.execute(`
             INSERT INTO pembelian (
@@ -1083,39 +1224,47 @@ const importExcelBarang = async (req, res) => {
             finalDate,
             req.user.id
           ]);
+        } else {
+          priceUpdatedCount++;
         }
 
-        updatedCount++;
         itemResults.push({
-          status: 'updated',
+          status: isQtyChanged ? 'stok_updated' : 'price_updated',
           kode_barang: item.kode_barang,
           barcode: barcodeToSave,
           nama_barang: item.nama_barang,
           merk: item.merk || rawMerk,
           stok_ditambah: qtyMasuk,
           stok_akhir: item.stok_akhir + qtyMasuk,
-          mod_lama: oldMod,
-          mod_baru: modBaru,
+          harga_beli_lama: oldModal,
+          harga_beli_baru: modalBaru,
           harga_jual: hargaJualFinal
         });
       } else {
         // BELUM ADA: Buat barang baru
-        const hasHargaBaru = rawHargaBaru && rawHargaBaru !== '-';
-        const hasHargaLama = rawHargaLama && rawHargaLama !== '-';
-        const activeMod = hasHargaBaru ? rawHargaBaru : (hasHargaLama ? rawHargaLama : '');
-        const modalSatuan = activeMod ? modToHarga(activeMod) : 0;
+        if (!rawSubKode || !rawSubKode.trim()) {
+          skippedCount++;
+          itemResults.push({
+            status: 'skipped',
+            nama_barang: namaBarang,
+            error: 'Kolom KODE wajib diisi untuk barang baru.'
+          });
+          continue;
+        }
+
+        const modalSatuan = inputHargaBeli !== null ? inputHargaBeli : 0;
         // Jika ada input harga jual di Excel gunakan, jika kosong default 0
         const hargaJualAwal = inputHargaJual !== null ? inputHargaJual : 0;
 
-        // Kode barang selalu digenerate sesuai coding (tidak mengambil dari file Excel)
-        const kodeBarangFinal = await generateKodeBarang(connection, rawMerk);
+        // Kode barang selalu digenerate sesuai coding (C23 + Merk/NN + SubKode + Urutan)
+        const kodeBarangFinal = await generateKodeBarang(connection, rawMerk, rawSubKode);
 
         const [insertRes] = await connection.execute(`
           INSERT INTO barang (
             kode_barang, barcode, nama_barang, kategori_id, merk,
             stok_awal, total_masuk, total_keluar, stok_akhir,
-            \`MOD\`, harga_jual, modal_harga_beli
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+            harga_jual, modal_harga_beli
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
         `, [
           kodeBarangFinal,
           cleanBarcode,
@@ -1125,7 +1274,6 @@ const importExcelBarang = async (req, res) => {
           qtyMasuk,
           qtyMasuk,
           qtyMasuk,
-          activeMod,
           hargaJualAwal,
           modalSatuan
         ]);
@@ -1133,8 +1281,9 @@ const importExcelBarang = async (req, res) => {
         const newId = insertRes.insertId;
 
         if (qtyMasuk > 0) {
-          const hargaLamaText = hasHargaLama ? rawHargaLama : '-';
-          const hargaBaruText = hasHargaBaru ? rawHargaBaru : '-';
+          const rawLamaParsed = (rawHargaLama !== undefined && rawHargaLama !== null) ? parseHargaBeli(rawHargaLama) : null;
+          const hargaLamaText = (rawLamaParsed !== null && rawLamaParsed > 0) ? String(rawLamaParsed) : '-';
+          const hargaBaruText = modalSatuan > 0 ? String(modalSatuan) : '-';
 
           await connection.execute(`
             INSERT INTO pembelian (
@@ -1163,7 +1312,7 @@ const importExcelBarang = async (req, res) => {
           nama_barang: namaBarang,
           merk: rawMerk,
           stok_awal: qtyMasuk,
-          mod: activeMod,
+          harga_beli: modalSatuan,
           harga_jual: hargaJualAwal
         });
       }
@@ -1174,15 +1323,27 @@ const importExcelBarang = async (req, res) => {
     await logActivity({
       tipe: 'pembelian',
       judul: 'Import Excel Berhasil',
-      detail: `Import data Excel selesai: ${createdCount} barang baru ditambahkan, ${updatedCount} barang diupdate stok, MOD & harga jual.`
+      detail: `Import data Excel selesai: ${createdCount} barang baru, ${stokUpdatedCount} barang ditambah stok, ${priceUpdatedCount} diperbarui harga, ${unchangedCount} tidak berubah.`
     });
 
+    const partsMsg = [];
+    if (createdCount > 0) partsMsg.push(`${createdCount} barang baru dibuat`);
+    if (stokUpdatedCount > 0) partsMsg.push(`${stokUpdatedCount} ditambah stok`);
+    if (priceUpdatedCount > 0) partsMsg.push(`${priceUpdatedCount} diperbarui harga`);
+    if (unchangedCount > 0) partsMsg.push(`${unchangedCount} tidak ada perubahan`);
+    const finalMsg = partsMsg.length > 0 
+      ? `Berhasil memproses file Excel: ${partsMsg.join(', ')}.`
+      : 'File Excel selesai diproses (tidak ada data yang perlu diubah).';
+
     return res.json({
-      message: `Berhasil memproses ${itemResults.length} data barang dari Excel.`,
+      message: finalMsg,
       summary: {
         total: itemResults.length,
         created: createdCount,
-        updated: updatedCount,
+        stok_updated: stokUpdatedCount,
+        price_updated: priceUpdatedCount,
+        unchanged: unchangedCount,
+        updated: stokUpdatedCount + priceUpdatedCount,
         skipped: skippedCount
       },
       data: itemResults

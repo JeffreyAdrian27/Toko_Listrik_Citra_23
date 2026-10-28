@@ -23,10 +23,8 @@ CREATE TABLE IF NOT EXISTS kategori (
 ) ENGINE=InnoDB;
 
 -- 3. Table Barang
--- MOD adalah kode rahasia huruf modal (e.g. T, CA, DT, CDS, TBA, dll.)
 CREATE TABLE IF NOT EXISTS barang (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  `MOD` VARCHAR(20) NOT NULL DEFAULT '',
   kode_barang VARCHAR(30) NOT NULL UNIQUE,
   barcode VARCHAR(50) NULL,
   nama_barang VARCHAR(150) NOT NULL,
@@ -54,7 +52,6 @@ CREATE TABLE IF NOT EXISTS penjualan (
   kode_barang VARCHAR(30) NOT NULL,
   nama_barang VARCHAR(150) NOT NULL,
   harga_jual DECIMAL(12,2) NOT NULL,
-  harga_modal VARCHAR(20) NOT NULL DEFAULT '',
   modal_satuan DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   jumlah INT NOT NULL,
   omzet_penjualan DECIMAL(12,2) NOT NULL,

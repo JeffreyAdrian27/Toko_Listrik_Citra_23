@@ -122,14 +122,13 @@ export async function queueOfflineAction(endpoint, method, payload, description 
         });
       }
     } else if (endpoint.includes('/pembelian') && method.toUpperCase() === 'POST') {
-      // Jika ini transaksi pembelian/restock, tambah stok lokal & update MOD
+      // Jika ini transaksi pembelian/restock, tambah stok lokal & update modal
       const item = await db.barang.get(payload.barang_id);
       if (item) {
         const newStock = (item.stok_akhir || 0) + (payload.jumlah_masuk || 0);
         await db.barang.update(item.id, {
           stok_akhir: newStock,
-          modal_harga_beli: payload.harga_beli,
-          MOD: payload.harga_baru_modal_satuan
+          modal_harga_beli: payload.harga_beli
         });
       }
     }

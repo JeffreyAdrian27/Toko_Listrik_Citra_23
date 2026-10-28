@@ -38,7 +38,6 @@ const getLaporanLabaRugi = async (req, res) => {
         p.tanggal,
         p.kode_barang,
         p.nama_barang,
-        p.harga_modal as MOD_kode,
         p.modal_satuan as harga_beli_modal,
         SUM(p.jumlah) as total_terjual,
         SUM(p.omzet_penjualan) as total_omzet,
@@ -46,7 +45,7 @@ const getLaporanLabaRugi = async (req, res) => {
         SUM(p.omzet_penjualan - (p.jumlah * p.modal_satuan)) as total_laba_kotor
       FROM penjualan p
       WHERE p.status = 'aktif' ${dateConditionPenjualan}
-      GROUP BY p.tanggal, p.barang_id, p.kode_barang, p.nama_barang, p.harga_modal, p.modal_satuan
+      GROUP BY p.tanggal, p.barang_id, p.kode_barang, p.nama_barang, p.modal_satuan
       ORDER BY p.tanggal DESC, total_omzet DESC
     `;
     const [itemRows] = await pool.execute(queryPerBarang, paramsPenjualan);

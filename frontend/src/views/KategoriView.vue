@@ -80,8 +80,8 @@
     </div>
 
     <!-- Modal Form (Tambah / Edit) -->
-    <div v-if="showModal" class="modal-backdrop" @click.self="closeModal">
-      <div class="modal-content">
+    <div v-if="showModal" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="handleBackdropClick($event, closeModal)">
+      <div class="modal-content" @mousedown.stop @click.stop>
         <div class="modal-header">
           <h3>{{ editingId ? 'Ubah Nama Kategori' : 'Tambah Kategori Baru' }}</h3>
           <button @click="closeModal" class="btn btn-sm btn-secondary" style="padding: 4px 8px;">
@@ -124,6 +124,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import AppLayout from '../components/AppLayout.vue';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import api from '../api';
+import { onBackdropMouseDown, handleBackdropClick } from '../utils/modalHelper';
 import { db } from '../db/clientDb';
 import { isOnline, queueOfflineAction } from '../services/syncManager';
 import { Layers, Plus, Search, Edit2, Trash2, X } from 'lucide-vue-next';
